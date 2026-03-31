@@ -187,6 +187,45 @@ With Sherpa:
 - it can warn when a branch often leads to blockage
 - it can recall how successful cases finished
 
+## What It Actually Feels Like
+
+Think about how a good human assistant learns your habits.
+
+After a few weeks, they don't just do what you ask — they anticipate.
+They remember that you always want coffee before the 9am call, not because you told them a rule, but because they watched it happen five times.
+They remember that last time you tried to book a restaurant the day-of, it didn't work out, so now they nudge you to book earlier.
+They're not smarter than they were on day one. They just have *muscle memory* for how your work tends to go.
+
+That's what Sherpa gives OpenClaw.
+
+### Without Sherpa
+
+You say: "I have a call with Acme Corp in an hour, help me prep."
+
+OpenClaw checks your calendar, drafts some talking points. Fine.
+
+Next week, different company, same ask. It starts from scratch. Doesn't remember that last time you also wanted the most recent email thread pulled. Doesn't remember you always prefer bullets over paragraphs. Doesn't know that 4 out of 5 times, you follow up with "what did we discuss last time?" — something it could have just done upfront.
+
+Every meeting prep is day one.
+
+### With Sherpa
+
+After a handful of meeting preps, Sherpa has seen the workflow shape:
+
+`calendar-check → email-search → prior-notes → talking-points → summary`
+
+It has also noticed that when it *skips* the email search, you come back and ask for it most of the time. That's a stall pattern.
+
+So now when you say "prep me for the Acme call," the advisory injects:
+
+> *Meeting prep flows typically follow: calendar → recent emails → prior notes → talking points. Skipping email lookup leads to a follow-up request 4 out of 5 times. Last 3 successful preps averaged 2 minutes.*
+
+OpenClaw now front-loads the email pull and the prior context without you asking.
+
+It learned your **process**, not your **facts**. That distinction matters. Facts change, but the shape of how you work is remarkably stable — and remarkably useful once something is paying attention to it.
+
+The same thing applies to anything you do repeatedly: research tasks, weekly reviews, trip planning, inbox triage. Sherpa turns your habits into guardrails.
+
 ## OpenClaw Tools
 
 After install, Sherpa adds these OpenClaw tools:

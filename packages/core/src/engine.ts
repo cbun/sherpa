@@ -22,7 +22,10 @@ import {
   type WorkflowRisk,
   type WorkflowRisksResult,
   type WorkflowStateResult,
-  type WorkflowStatusResult
+  type WorkflowStatusResult,
+  type TaxonomyReportOptions,
+  type TaxonomyReportResult,
+  type TaxonomyTypeSummary
 } from "./types.js";
 
 type StoredEventRow = {
@@ -50,6 +53,15 @@ type StateEdgeRow = {
   terminal_failure_count: number;
   terminal_unknown_count: number;
   total_duration_ms: number;
+};
+
+type TaxonomyRow = {
+  type: string;
+  count: number;
+  first_seen_at: string;
+  last_seen_at: string;
+  baseline_count: number;
+  recent_count: number;
 };
 
 function deserializeEvent(row: StoredEventRow): SherpaEvent {
@@ -194,6 +206,50 @@ function recallScore(params: {
   return Number((overlap * continuationSignal * outcomeWeight).toFixed(3));
 }
 
+function ratio(value: number, total: number) {
+  if (total <= 0) {
+    return 0;
+  }
+
+  return Number((value / total).toFixed(3));
+}
+
+function nullableRatio(value: number, total: number) {
+  if (total <= 0) {
+    return null;
+  }
+
+  return Number((value / total).toFixed(3));
+}
+
+function summarizeTaxonomyRow(
+  row: TaxonomyRow,
+  totals: {
+    totalEvents: number;
+    baselineEvents: number;
+    recentEvents: number;
+  },
+  rareSupport: number
+): TaxonomyTypeSummary {
+  const baselineCount = Number(row.baseline_count);
+  const recentCount = Number(row.recent_count);
+  const count = Number(row.count);
+
+  return {
+    event: row.type,
+    count,
+    share: ratio(count, totals.totalEvents),
+    firstSeenAt: row.first_seen_at,
+    lastSeenAt: row.last_seen_at,
+    baselineCount,
+    baselineShare: nullableRatio(baselineCount, totals.baselineEvents),
+    recentCount,
+    recentShare: nullableRatio(recentCount, totals.recentEvents),
+    isNewInRecentWindow: recentCount > 0 && baselineCount === 0,
+    isRare: count <= rareSupport
+  };
+}
+
 export class SherpaEngine {
   readonly rootDir: string;
   readonly defaultOrder: number;
@@ -300,6 +356,113 @@ export class SherpaEngine {
         },
         ledgerPath: this.paths.eventsDir,
         graphPath: this.paths.graphPath
+      };
+    });
+  }
+
+  async taxonomyReport(options: TaxonomyReportOptions = {}): Promise<TaxonomyReportResult> {
+    await this.init();
+
+    const recentDays = options.recentDays ?? 14;
+    const rareSupport = options.rareSupport ?? 3;
+    const limit = options.limit ?? 10;
+    const generatedAt = options.asOf ?? new Date().toISOString();
+    const recentWindowStart = new Date(Date.parse(generatedAt) - recentDays * 24 * 60 * 60 * 1000).toISOString();
+
+    return withGraphStore(this.paths.graphPath, (db) => {
+      const rows = db
+        .prepare(
+          `
+            SELECT
+              type,
+              COUNT(*) as count,
+              MIN(ts) as first_seen_at,
+              MAX(ts) as last_seen_at,
+              SUM(CASE WHEN ts < ? THEN 1 ELSE 0 END) as baseline_count,
+              SUM(CASE WHEN ts >= ? THEN 1 ELSE 0 END) as recent_count
+            FROM events
+            GROUP BY type
+            ORDER BY count DESC, type ASC
+          `
+        )
+        .all(recentWindowStart, recentWindowStart) as TaxonomyRow[];
+
+      const totalEvents = rows.reduce((sum, row) => sum + Number(row.count), 0);
+      const baselineEventCount = rows.reduce((sum, row) => sum + Number(row.baseline_count), 0);
+      const recentEventCount = rows.reduce((sum, row) => sum + Number(row.recent_count), 0);
+      const distinctTypes = rows.length;
+      const baselineDistinctTypes = rows.filter((row) => Number(row.baseline_count) > 0).length;
+      const recentDistinctTypes = rows.filter((row) => Number(row.recent_count) > 0).length;
+      const summaries = rows.map((row) =>
+        summarizeTaxonomyRow(
+          row,
+          {
+            totalEvents,
+            baselineEvents: baselineEventCount,
+            recentEvents: recentEventCount
+          },
+          rareSupport
+        )
+      );
+
+      let driftScore = 0;
+      for (const summary of summaries) {
+        driftScore += Math.abs((summary.recentShare ?? 0) - (summary.baselineShare ?? 0));
+      }
+
+      const rareTypes = summaries
+        .filter((summary) => summary.isRare)
+        .sort((left, right) => {
+          if (left.count !== right.count) {
+            return left.count - right.count;
+          }
+
+          if (right.recentCount !== left.recentCount) {
+            return right.recentCount - left.recentCount;
+          }
+
+          return left.event.localeCompare(right.event);
+        })
+        .slice(0, limit);
+
+      const recentNewTypes = summaries
+        .filter((summary) => summary.isNewInRecentWindow)
+        .sort((left, right) => {
+          if (right.recentCount !== left.recentCount) {
+            return right.recentCount - left.recentCount;
+          }
+
+          return left.event.localeCompare(right.event);
+        })
+        .slice(0, limit);
+
+      return {
+        generatedAt,
+        totalEvents,
+        distinctTypes,
+        rareSupport,
+        topTypes: summaries.slice(0, limit),
+        rareTypes,
+        recentNewTypes,
+        drift: {
+          recentWindowDays: recentDays,
+          recentWindowStart,
+          baselineEventCount,
+          baselineDistinctTypes,
+          recentEventCount,
+          recentDistinctTypes,
+          newTypeCount: summaries.filter((summary) => summary.isNewInRecentWindow).length,
+          newTypeShare: ratio(
+            summaries.filter((summary) => summary.isNewInRecentWindow).reduce((sum, summary) => sum + summary.recentCount, 0),
+            recentEventCount
+          ),
+          rareTypeCount: summaries.filter((summary) => summary.isRare).length,
+          rareEventShare: ratio(
+            summaries.filter((summary) => summary.isRare).reduce((sum, summary) => sum + summary.count, 0),
+            totalEvents
+          ),
+          score: Number((driftScore / 2).toFixed(3))
+        }
       };
     });
   }

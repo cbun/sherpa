@@ -414,6 +414,113 @@ describe("SherpaEngine", () => {
     expect(state.state).toEqual(["session.started", "tool.started", "tool.succeeded"]);
   });
 
+  it("reports event taxonomy cardinality and recent drift metrics", async () => {
+    const engine = await createEngine();
+
+    await engine.ingestBatch([
+      {
+        caseId: "case-taxonomy-1",
+        ts: "2026-03-01T10:00:00.000Z",
+        source: "openclaw.session",
+        type: "session.started",
+        outcome: "unknown"
+      },
+      {
+        caseId: "case-taxonomy-1",
+        ts: "2026-03-01T10:01:00.000Z",
+        source: "tool.repo",
+        type: "repo.inspected",
+        outcome: "success"
+      },
+      {
+        caseId: "case-taxonomy-1",
+        ts: "2026-03-01T10:02:00.000Z",
+        source: "tool.edit",
+        type: "patch.applied",
+        outcome: "success"
+      },
+      {
+        caseId: "case-taxonomy-2",
+        ts: "2026-03-02T10:00:00.000Z",
+        source: "openclaw.session",
+        type: "session.started",
+        outcome: "unknown"
+      },
+      {
+        caseId: "case-taxonomy-2",
+        ts: "2026-03-02T10:01:00.000Z",
+        source: "tool.repo",
+        type: "repo.inspected",
+        outcome: "success"
+      },
+      {
+        caseId: "case-taxonomy-2",
+        ts: "2026-03-02T10:02:00.000Z",
+        source: "tool.edit",
+        type: "patch.applied",
+        outcome: "success"
+      },
+      {
+        caseId: "case-taxonomy-3",
+        ts: "2026-03-30T10:00:00.000Z",
+        source: "openclaw.session",
+        type: "session.started",
+        outcome: "unknown"
+      },
+      {
+        caseId: "case-taxonomy-3",
+        ts: "2026-03-30T10:01:00.000Z",
+        source: "tool.repo",
+        type: "repo.inspected",
+        outcome: "success"
+      },
+      {
+        caseId: "case-taxonomy-3",
+        ts: "2026-03-30T10:02:00.000Z",
+        source: "tool.deploy",
+        type: "deploy.checked",
+        outcome: "success"
+      }
+    ]);
+
+    const report = await engine.taxonomyReport({
+      asOf: "2026-03-31T00:00:00.000Z",
+      recentDays: 7,
+      rareSupport: 1,
+      limit: 5
+    });
+
+    expect(report.totalEvents).toBe(9);
+    expect(report.distinctTypes).toBe(4);
+    expect(report.topTypes.slice(0, 4)).toMatchObject([
+      { event: "repo.inspected", count: 3, share: 0.333 },
+      { event: "session.started", count: 3, share: 0.333 },
+      { event: "patch.applied", count: 2, share: 0.222 },
+      { event: "deploy.checked", count: 1, share: 0.111, isNewInRecentWindow: true, isRare: true }
+    ]);
+    expect(report.rareTypes).toHaveLength(1);
+    expect(report.rareTypes[0]).toMatchObject({
+      event: "deploy.checked",
+      count: 1,
+      recentCount: 1,
+      baselineCount: 0
+    });
+    expect(report.recentNewTypes).toHaveLength(1);
+    expect(report.recentNewTypes[0]?.event).toBe("deploy.checked");
+    expect(report.drift).toMatchObject({
+      recentWindowDays: 7,
+      baselineEventCount: 6,
+      baselineDistinctTypes: 3,
+      recentEventCount: 3,
+      recentDistinctTypes: 3,
+      newTypeCount: 1,
+      newTypeShare: 0.333,
+      rareTypeCount: 1,
+      rareEventShare: 0.111,
+      score: 0.333
+    });
+  });
+
   it("exports a snapshot and performs gc maintenance", async () => {
     const engine = await createEngine();
 

@@ -84,6 +84,7 @@ node packages/cli/dist/index.js --root ./.sherpa workflow-state --case-id case-1
 node packages/cli/dist/index.js --root ./.sherpa workflow-next --case-id case-123
 node packages/cli/dist/index.js --root ./.sherpa workflow-risks --case-id case-123
 node packages/cli/dist/index.js --root ./.sherpa workflow-recall --case-id case-123 --mode successful
+node packages/cli/dist/index.js --root ./.sherpa taxonomy-report --recent-days 14 --max-types 50 --max-drift-score 0.2
 node packages/cli/dist/index.js validate --dataset fixtures/validation/synthetic-workflows.json --top-k 3 --max-misses 10
 node packages/cli/dist/index.js validate --dataset fixtures/validation/synthetic-workflows.json --min-topk 0.25 --max-miss-count 25
 node packages/cli/dist/index.js validate --dataset ./event-log.csv --format csv --case-field case_id --type-field activity --timestamp-field timestamp
@@ -134,6 +135,7 @@ node packages/cli/dist/index.js --root ./.sherpa serve --host 127.0.0.1 --port 8
 - The MCP package now supports stdio plus a minimal stateless streamable HTTP deployment path with a `/health` endpoint for local sidecar/service use.
 - The CLI now supports `ingest-batch` so subprocess transports can flush event bursts efficiently.
 - The CLI now also supports `serve`, exposing a small local JSON HTTP daemon at `/health` and `/rpc`, and the OpenClaw plugin can optionally manage that daemon process itself in HTTP mode with health checks and restart backoff supervision.
+- The CLI now also supports `taxonomy-report`, which measures event alphabet cardinality, rare-event share, recent new-type share, and recent-vs-baseline distribution drift so normalization quality can be gated in CI.
 - The CLI now also supports `validate`, which runs a leave-one-case-out next-step benchmark over JSON, JSONL, CSV, and XES event datasets, with capped miss output, per-event accuracy breakdown, and optional threshold-based failure for CI gating. The repo ships with synthetic JSON plus simple CSV and XES fixtures under `fixtures/validation/`.
 - `workflow_status` in the native plugin now reports plugin transport and capture/scope diagnostics in addition to core backend freshness.
 - GitHub Actions CI now runs typecheck, test, build, and the synthetic validation harness on pushes and pull requests.
@@ -147,6 +149,7 @@ That leads to a few practical implementation rules:
 
 - Event typing quality is a first-class concern. Bad segmentation or noisy labels directly degrade graph quality.
 - Sparse branching is an assumption worth preserving. The event alphabet should stay bounded and operational, not drift into open-ended text labels.
+- Production use should set explicit thresholds for both retrieval quality and taxonomy drift, so event normalization regressions fail fast instead of silently poisoning the graph.
 - Outcome annotation matters. Sherpa must not rank frequent but bad paths above less frequent successful ones.
 - Hybrid memory is the right target. Sherpa complements semantic memory and conversational memory; it does not replace them.
 

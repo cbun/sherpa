@@ -123,6 +123,52 @@ export interface WorkflowStatusResult {
   graphPath: string;
 }
 
+export interface TaxonomyReportOptions {
+  recentDays?: number;
+  rareSupport?: number;
+  limit?: number;
+  asOf?: string;
+}
+
+export interface TaxonomyTypeSummary {
+  event: string;
+  count: number;
+  share: number;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  baselineCount: number;
+  baselineShare: number | null;
+  recentCount: number;
+  recentShare: number | null;
+  isNewInRecentWindow: boolean;
+  isRare: boolean;
+}
+
+export interface TaxonomyDriftMetrics {
+  recentWindowDays: number;
+  recentWindowStart: string;
+  baselineEventCount: number;
+  baselineDistinctTypes: number;
+  recentEventCount: number;
+  recentDistinctTypes: number;
+  newTypeCount: number;
+  newTypeShare: number;
+  rareTypeCount: number;
+  rareEventShare: number;
+  score: number;
+}
+
+export interface TaxonomyReportResult {
+  generatedAt: string;
+  totalEvents: number;
+  distinctTypes: number;
+  rareSupport: number;
+  topTypes: TaxonomyTypeSummary[];
+  rareTypes: TaxonomyTypeSummary[];
+  recentNewTypes: TaxonomyTypeSummary[];
+  drift: TaxonomyDriftMetrics;
+}
+
 export interface ExportResult {
   exportPath: string;
   exportedAt: string;

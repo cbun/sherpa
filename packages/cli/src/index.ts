@@ -6,6 +6,7 @@ import process from "node:process";
 import { SherpaEngine, type SherpaEventInput, type WorkflowRecallMode } from "@sherpa/core";
 import { Command, type Command as CommandInstance } from "commander";
 
+import { assertTaxonomyThresholds } from "./taxonomy.js";
 import { assertValidationThresholds, validateDatasetFile } from "./validate.js";
 
 function defaultRoot() {
@@ -171,6 +172,13 @@ async function executeRpc(engine: SherpaEngine, method: string, params: Record<s
         typeof params.mode === "string" ? parseRecallMode(params.mode) : undefined,
         typeof params.limit === "number" ? params.limit : undefined
       );
+    case "taxonomyReport":
+      return engine.taxonomyReport({
+        ...(typeof params.recentDays === "number" ? { recentDays: params.recentDays } : {}),
+        ...(typeof params.rareSupport === "number" ? { rareSupport: params.rareSupport } : {}),
+        ...(typeof params.limit === "number" ? { limit: params.limit } : {}),
+        ...(typeof params.asOf === "string" ? { asOf: params.asOf } : {})
+      });
     default:
       throw new Error(`Unsupported RPC method: ${method}`);
   }
@@ -295,6 +303,32 @@ program
   .action(async (options, command) => {
     const engine = createEngine(command);
     printJson(await engine.workflowRecall(options.caseId, parseRecallMode(options.mode), parseInteger(options.limit, "--limit")));
+  });
+
+program
+  .command("taxonomy-report")
+  .description("Inspect event alphabet cardinality and recent drift metrics")
+  .option("--recent-days <n>", "Recent window size in days", "14")
+  .option("--rare-support <n>", "Events at or below this support are considered rare", "3")
+  .option("--limit <n>", "Maximum number of event summaries to return per section", "10")
+  .option("--max-types <n>", "Fail if total distinct event types exceeds this number")
+  .option("--max-new-type-share <ratio>", "Fail if recent new-type share exceeds this ratio")
+  .option("--max-rare-event-share <ratio>", "Fail if rare-event share exceeds this ratio")
+  .option("--max-drift-score <ratio>", "Fail if recent distribution drift exceeds this score")
+  .action(async (options, command) => {
+    const engine = createEngine(command);
+    const report = await engine.taxonomyReport({
+      recentDays: parseInteger(options.recentDays, "--recent-days"),
+      rareSupport: parseInteger(options.rareSupport, "--rare-support"),
+      limit: parseInteger(options.limit, "--limit")
+    });
+    assertTaxonomyThresholds(report, {
+      ...(options.maxTypes ? { maxTypes: parseInteger(options.maxTypes, "--max-types") } : {}),
+      ...(options.maxNewTypeShare ? { maxNewTypeShare: parseRatio(options.maxNewTypeShare, "--max-new-type-share") } : {}),
+      ...(options.maxRareEventShare ? { maxRareEventShare: parseRatio(options.maxRareEventShare, "--max-rare-event-share") } : {}),
+      ...(options.maxDriftScore ? { maxDriftScore: parseRatio(options.maxDriftScore, "--max-drift-score") } : {})
+    });
+    printJson(report);
   });
 
 program

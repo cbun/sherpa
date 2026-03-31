@@ -10,6 +10,7 @@ import {
   type SherpaEngineOptions,
   type SherpaEvent,
   type SherpaEventInput,
+  type SherpaMetrics,
   type WorkflowNextResult,
   type WorkflowRecallMode,
   type WorkflowRecallResult,
@@ -87,6 +88,10 @@ export class SherpaClient {
 
   gc(): Promise<GcResult> {
     return this.engine.gc();
+  }
+
+  collectMetrics(): Promise<SherpaMetrics> {
+    return this.engine.collectMetrics();
   }
 
   workflowState(caseId: string, maxOrder?: number): Promise<WorkflowStateResult> {

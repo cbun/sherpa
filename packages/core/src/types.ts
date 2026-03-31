@@ -216,6 +216,24 @@ export interface ImportResult {
   fromExportedAt: string | null;
 }
 
+export interface SherpaMetrics {
+  // Adoption
+  totalEvents: number;
+  totalCases: number;
+  activeCasesLast7d: number;
+
+  // Quality
+  advisoryInjections: number;
+
+  // Efficiency
+  meanCaseDurationMs: number | null;
+
+  // Reliability
+  rebuildCount: number;
+  lastRebuildAt: string | null;
+  ledgerCorruptionCount: number;
+}
+
 export interface GcResult {
   vacuumed: boolean;
   removedTmpFiles: number;

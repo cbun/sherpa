@@ -108,6 +108,45 @@ export async function withGraphStore<T>(graphPath: string, handler: (db: Databas
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS workflows (
+        workflow_label TEXT PRIMARY KEY,
+        case_count INTEGER NOT NULL,
+        event_count INTEGER NOT NULL,
+        success_rate REAL,
+        failure_rate REAL,
+        mean_duration_ms REAL,
+        first_seen_at TEXT NOT NULL,
+        last_seen_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS risk_metrics (
+        state_key TEXT NOT NULL,
+        branch TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        probability REAL NOT NULL,
+        relative_risk REAL NOT NULL,
+        support INTEGER NOT NULL,
+        last_seen_at TEXT NOT NULL,
+        PRIMARY KEY (state_key, branch, kind)
+      );
+
+      CREATE TABLE IF NOT EXISTS success_metrics (
+        state_key TEXT NOT NULL,
+        branch TEXT NOT NULL,
+        success_rate REAL,
+        failure_rate REAL,
+        support INTEGER NOT NULL,
+        mean_time_to_next_ms REAL,
+        last_seen_at TEXT NOT NULL,
+        PRIMARY KEY (state_key, branch)
+      );
+
+      CREATE TABLE IF NOT EXISTS config_versions (
+        version_id TEXT PRIMARY KEY,
+        config_json TEXT NOT NULL,
+        applied_at TEXT NOT NULL
+      );
     `);
 
     migrateGraphSchema(db);
@@ -123,6 +162,9 @@ export function resetDerivedTables(db: DatabaseSyncType) {
     DELETE FROM events;
     DELETE FROM cases;
     DELETE FROM state_edges;
+    DELETE FROM workflows;
+    DELETE FROM risk_metrics;
+    DELETE FROM success_metrics;
   `);
 }
 
@@ -225,4 +267,98 @@ export function setMetadata(db: DatabaseSyncType, key: string, value: string) {
     VALUES (?, ?)
     ON CONFLICT(key) DO UPDATE SET value = excluded.value
   `).run(key, value);
+}
+
+export function getMetadata(db: DatabaseSyncType, key: string): string | null {
+  const row = db.prepare("SELECT value FROM metadata WHERE key = ?").get(key) as { value: string } | undefined;
+  return row?.value ?? null;
+}
+
+export function incrementMetadata(db: DatabaseSyncType, key: string) {
+  const current = Number(getMetadata(db, key) ?? "0");
+  setMetadata(db, key, String(current + 1));
+}
+
+export function insertWorkflows(
+  db: DatabaseSyncType,
+  rows: Array<{
+    workflowLabel: string;
+    caseCount: number;
+    eventCount: number;
+    successRate: number | null;
+    failureRate: number | null;
+    meanDurationMs: number | null;
+    firstSeenAt: string;
+    lastSeenAt: string;
+  }>
+) {
+  const statement = db.prepare(`
+    INSERT INTO workflows (workflow_label, case_count, event_count, success_rate, failure_rate, mean_duration_ms, first_seen_at, last_seen_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  for (const row of rows) {
+    statement.run(
+      row.workflowLabel,
+      row.caseCount,
+      row.eventCount,
+      row.successRate,
+      row.failureRate,
+      row.meanDurationMs,
+      row.firstSeenAt,
+      row.lastSeenAt
+    );
+  }
+}
+
+export function insertRiskMetrics(
+  db: DatabaseSyncType,
+  rows: Array<{
+    stateKey: string;
+    branch: string;
+    kind: string;
+    probability: number;
+    relativeRisk: number;
+    support: number;
+    lastSeenAt: string;
+  }>
+) {
+  const statement = db.prepare(`
+    INSERT INTO risk_metrics (state_key, branch, kind, probability, relative_risk, support, last_seen_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  for (const row of rows) {
+    statement.run(row.stateKey, row.branch, row.kind, row.probability, row.relativeRisk, row.support, row.lastSeenAt);
+  }
+}
+
+export function insertSuccessMetrics(
+  db: DatabaseSyncType,
+  rows: Array<{
+    stateKey: string;
+    branch: string;
+    successRate: number | null;
+    failureRate: number | null;
+    support: number;
+    meanTimeToNextMs: number | null;
+    lastSeenAt: string;
+  }>
+) {
+  const statement = db.prepare(`
+    INSERT INTO success_metrics (state_key, branch, success_rate, failure_rate, support, mean_time_to_next_ms, last_seen_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  for (const row of rows) {
+    statement.run(row.stateKey, row.branch, row.successRate, row.failureRate, row.support, row.meanTimeToNextMs, row.lastSeenAt);
+  }
+}
+
+export function insertConfigVersion(db: DatabaseSyncType, versionId: string, configJson: string, appliedAt: string) {
+  db.prepare(`
+    INSERT INTO config_versions (version_id, config_json, applied_at)
+    VALUES (?, ?, ?)
+    ON CONFLICT(version_id) DO UPDATE SET config_json = excluded.config_json, applied_at = excluded.applied_at
+  `).run(versionId, configJson, appliedAt);
 }

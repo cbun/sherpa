@@ -5,7 +5,20 @@ import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
 import { appendEvent, appendEvents, ensureDir, readLedger } from "./ledger.js";
 import { buildDerivedRows, stateKeyFromEvents } from "./graph.js";
 import { resolveSherpaPaths } from "./paths.js";
-import { insertCases, insertEvents, insertStateEdges, resetDerivedTables, setMetadata, withGraphStore } from "./store.js";
+import {
+  getMetadata,
+  incrementMetadata,
+  insertCases,
+  insertConfigVersion,
+  insertEvents,
+  insertRiskMetrics,
+  insertStateEdges,
+  insertSuccessMetrics,
+  insertWorkflows,
+  resetDerivedTables,
+  setMetadata,
+  withGraphStore
+} from "./store.js";
 import {
   type AnalyticsReportOptions,
   type AnalyticsReportResult,
@@ -17,6 +30,7 @@ import {
   type SherpaEngineOptions,
   type SherpaEvent,
   type SherpaEventInput,
+  type SherpaMetrics,
   type SherpaOutcome,
   type WorkflowNextCandidate,
   type WorkflowNextResult,
@@ -341,11 +355,176 @@ export class SherpaEngine {
       insertEvents(db, events);
       insertCases(db, caseRows);
       insertStateEdges(db, stateEdgeRows);
+
+      // Materialize workflow aggregates from cases by workflow label
+      const workflowMap = new Map<
+        string,
+        { caseCount: number; eventCount: number; successCount: number; failureCount: number; totalDurationMs: number; firstSeenAt: string; lastSeenAt: string }
+      >();
+      for (const event of events) {
+        for (const label of event.labels) {
+          if (!label.startsWith("workflow:")) {
+            continue;
+          }
+          const existing = workflowMap.get(label);
+          if (existing) {
+            existing.eventCount++;
+            if (event.ts < existing.firstSeenAt) {
+              existing.firstSeenAt = event.ts;
+            }
+            if (event.ts > existing.lastSeenAt) {
+              existing.lastSeenAt = event.ts;
+            }
+          } else {
+            workflowMap.set(label, {
+              caseCount: 0,
+              eventCount: 1,
+              successCount: 0,
+              failureCount: 0,
+              totalDurationMs: 0,
+              firstSeenAt: event.ts,
+              lastSeenAt: event.ts
+            });
+          }
+        }
+      }
+      // Count cases per workflow and track outcomes + duration
+      for (const caseRow of caseRows) {
+        const caseEvents = events.filter((event) => event.caseId === caseRow.caseId);
+        const workflowLabels = new Set(caseEvents.flatMap((event) => event.labels.filter((label) => label.startsWith("workflow:"))));
+        const durationMs =
+          caseEvents.length >= 2 ? Date.parse(caseEvents[caseEvents.length - 1]!.ts) - Date.parse(caseEvents[0]!.ts) : 0;
+        for (const label of workflowLabels) {
+          const workflow = workflowMap.get(label);
+          if (workflow) {
+            workflow.caseCount++;
+            workflow.totalDurationMs += durationMs;
+            if (caseRow.terminalOutcome === "success") {
+              workflow.successCount++;
+            }
+            if (caseRow.terminalOutcome === "failure") {
+              workflow.failureCount++;
+            }
+          }
+        }
+      }
+      insertWorkflows(
+        db,
+        [...workflowMap.entries()].map(([label, w]) => ({
+          workflowLabel: label,
+          caseCount: w.caseCount,
+          eventCount: w.eventCount,
+          successRate: w.caseCount === 0 ? null : Number((w.successCount / w.caseCount).toFixed(3)),
+          failureRate: w.caseCount === 0 ? null : Number((w.failureCount / w.caseCount).toFixed(3)),
+          meanDurationMs: w.caseCount === 0 ? null : Number((w.totalDurationMs / w.caseCount).toFixed(0)),
+          firstSeenAt: w.firstSeenAt,
+          lastSeenAt: w.lastSeenAt
+        }))
+      );
+
+      // Materialize success metrics from state_edges (per state_key + branch)
+      const successMetricRows: Array<{
+        stateKey: string;
+        branch: string;
+        successRate: number | null;
+        failureRate: number | null;
+        support: number;
+        meanTimeToNextMs: number | null;
+        lastSeenAt: string;
+      }> = [];
+      for (const edge of stateEdgeRows) {
+        if (edge.orderN !== this.defaultOrder) {
+          continue;
+        }
+        const knownOutcomes = edge.terminalSuccessCount + edge.terminalFailureCount;
+        successMetricRows.push({
+          stateKey: edge.stateKey,
+          branch: edge.nextEvent,
+          successRate: knownOutcomes === 0 ? null : Number((edge.terminalSuccessCount / knownOutcomes).toFixed(3)),
+          failureRate: knownOutcomes === 0 ? null : Number((edge.terminalFailureCount / knownOutcomes).toFixed(3)),
+          support: edge.support,
+          meanTimeToNextMs: edge.support === 0 ? null : Number((edge.totalDurationMs / edge.support).toFixed(0)),
+          lastSeenAt: edge.lastSeenAt
+        });
+      }
+      insertSuccessMetrics(db, successMetricRows);
+
+      // Materialize risk metrics from state_edges (per state_key, branches with elevated failure/stall)
+      const riskMetricRows: Array<{
+        stateKey: string;
+        branch: string;
+        kind: string;
+        probability: number;
+        relativeRisk: number;
+        support: number;
+        lastSeenAt: string;
+      }> = [];
+      // Group edges by state_key at default order
+      const edgesByState = new Map<string, typeof stateEdgeRows>();
+      for (const edge of stateEdgeRows) {
+        if (edge.orderN !== this.defaultOrder) {
+          continue;
+        }
+        const existing = edgesByState.get(edge.stateKey);
+        if (existing) {
+          existing.push(edge);
+        } else {
+          edgesByState.set(edge.stateKey, [edge]);
+        }
+      }
+      for (const [stateKey, edges] of edgesByState) {
+        const totalSupport = edges.reduce((sum, edge) => sum + edge.support, 0);
+        const baselineFailureCount = edges.reduce((sum, edge) => sum + edge.terminalFailureCount, 0);
+        const baselineUnknownCount = edges.reduce((sum, edge) => sum + edge.terminalUnknownCount, 0);
+        const baselineFailureRate = baselineFailureCount / Math.max(1, totalSupport);
+        const baselineStallRate = baselineUnknownCount / Math.max(1, totalSupport);
+
+        for (const edge of edges) {
+          const probability = Number((edge.support / totalSupport).toFixed(3));
+          const failureRate = edge.terminalFailureCount / Math.max(1, edge.support);
+          const stallRate = edge.terminalUnknownCount / Math.max(1, edge.support);
+
+          if (edge.terminalFailureCount > 0 && failureRate > baselineFailureRate) {
+            riskMetricRows.push({
+              stateKey,
+              branch: edge.nextEvent,
+              kind: "failure",
+              probability,
+              relativeRisk: Number(relativeRisk(failureRate, baselineFailureRate).toFixed(3)),
+              support: edge.support,
+              lastSeenAt: edge.lastSeenAt
+            });
+          }
+          if (edge.terminalUnknownCount > 0 && stallRate > baselineStallRate) {
+            riskMetricRows.push({
+              stateKey,
+              branch: edge.nextEvent,
+              kind: "stall",
+              probability,
+              relativeRisk: Number(relativeRisk(stallRate, baselineStallRate).toFixed(3)),
+              support: edge.support,
+              lastSeenAt: edge.lastSeenAt
+            });
+          }
+        }
+      }
+      insertRiskMetrics(db, riskMetricRows);
+
+      // Record config version
+      const configHash = `${this.defaultOrder}-${this.minOrder}-${this.maxOrder}-${this.minSupport}`;
+      insertConfigVersion(db, configHash, JSON.stringify({
+        defaultOrder: this.defaultOrder,
+        minOrder: this.minOrder,
+        maxOrder: this.maxOrder,
+        minSupport: this.minSupport
+      }), new Date().toISOString());
+
       setMetadata(db, "defaultOrder", String(this.defaultOrder));
       setMetadata(db, "minOrder", String(this.minOrder));
       setMetadata(db, "maxOrder", String(this.maxOrder));
       setMetadata(db, "minSupport", String(this.minSupport));
       setMetadata(db, "lastRebuildAt", new Date().toISOString());
+      incrementMetadata(db, "rebuildCount");
     });
   }
 
@@ -391,6 +570,48 @@ export class SherpaEngine {
         },
         ledgerPath: this.paths.eventsDir,
         graphPath: this.paths.graphPath
+      };
+    });
+  }
+
+  async collectMetrics(): Promise<SherpaMetrics> {
+    await this.init();
+
+    return withGraphStore(this.paths.graphPath, (db) => {
+      const eventRow = db.prepare("SELECT COUNT(*) as count FROM events").get() as { count: number };
+      const caseRow = db.prepare("SELECT COUNT(*) as count FROM cases").get() as { count: number };
+
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      const activeCasesRow = db
+        .prepare("SELECT COUNT(*) as count FROM cases WHERE last_seen_at >= ?")
+        .get(sevenDaysAgo) as { count: number };
+
+      const durationRow = db
+        .prepare(`
+          SELECT AVG(
+            CASE WHEN event_count >= 2 THEN
+              (julianday(last_seen_at) - julianday(first_seen_at)) * 86400000
+            ELSE NULL END
+          ) as mean_ms
+          FROM cases
+          WHERE terminal_outcome != 'unknown' AND event_count >= 2
+        `)
+        .get() as { mean_ms: number | null };
+
+      const rebuildCount = Number(getMetadata(db, "rebuildCount") ?? "0");
+      const lastRebuildAt = getMetadata(db, "lastRebuildAt");
+      const advisoryInjections = Number(getMetadata(db, "advisoryInjections") ?? "0");
+      const ledgerCorruptionCount = Number(getMetadata(db, "ledgerCorruptionCount") ?? "0");
+
+      return {
+        totalEvents: Number(eventRow.count),
+        totalCases: Number(caseRow.count),
+        activeCasesLast7d: Number(activeCasesRow.count),
+        advisoryInjections,
+        meanCaseDurationMs: durationRow.mean_ms != null ? Number(Number(durationRow.mean_ms).toFixed(0)) : null,
+        rebuildCount,
+        lastRebuildAt,
+        ledgerCorruptionCount
       };
     });
   }

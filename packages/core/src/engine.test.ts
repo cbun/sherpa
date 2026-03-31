@@ -739,4 +739,105 @@ describe("SherpaEngine", () => {
     expect(gcResult.removedTmpFiles).toBeGreaterThanOrEqual(1);
     expect(gcResult.removedExportFiles).toBeGreaterThanOrEqual(2);
   });
+
+  it("imports events from an exported snapshot", async () => {
+    const engine1 = await createEngine();
+
+    await engine1.ingestBatch([
+      {
+        caseId: "case-import-1",
+        ts: "2026-03-30T10:00:00.000Z",
+        source: "tool.docs",
+        type: "docs.requested",
+        outcome: "success"
+      },
+      {
+        caseId: "case-import-1",
+        ts: "2026-03-30T10:01:00.000Z",
+        source: "tool.docs",
+        type: "docs.received",
+        outcome: "success"
+      },
+      {
+        caseId: "case-import-2",
+        ts: "2026-03-30T11:00:00.000Z",
+        source: "tool.review",
+        type: "review.started",
+        outcome: "unknown"
+      }
+    ]);
+
+    const exportResult = await engine1.exportSnapshot();
+    expect(exportResult.eventCount).toBe(3);
+    expect(exportResult.caseCount).toBe(2);
+
+    const engine2 = await createEngine();
+    const status2Before = await engine2.status();
+    expect(status2Before.events).toBe(0);
+
+    const importResult = await engine2.importSnapshot(exportResult.exportPath);
+    expect(importResult.eventCount).toBe(3);
+    expect(importResult.caseCount).toBe(2);
+    expect(importResult.fromExportedAt).toBe(exportResult.exportedAt);
+
+    const status2After = await engine2.status();
+    expect(status2After.events).toBe(3);
+    expect(status2After.cases).toBe(2);
+  });
+
+  it("skips duplicate events on re-import", async () => {
+    const engine = await createEngine();
+
+    await engine.ingestBatch([
+      {
+        caseId: "case-dedup",
+        ts: "2026-03-30T10:00:00.000Z",
+        source: "tool.docs",
+        type: "docs.requested",
+        outcome: "success"
+      },
+      {
+        caseId: "case-dedup",
+        ts: "2026-03-30T10:01:00.000Z",
+        source: "tool.docs",
+        type: "docs.received",
+        outcome: "success"
+      }
+    ]);
+
+    const exportResult = await engine.exportSnapshot();
+
+    const importResult1 = await engine.importSnapshot(exportResult.exportPath);
+    expect(importResult1.eventCount).toBe(2);
+
+    const importResult2 = await engine.importSnapshot(exportResult.exportPath);
+    expect(importResult2.eventCount).toBe(2);
+
+    const status = await engine.status();
+    expect(status.events).toBe(2);
+  });
+
+  it("handles empty snapshot gracefully", async () => {
+    const engine = await createEngine();
+    const emptyPath = path.join(engine.paths.exportDir, "empty.json");
+    await fs.mkdir(engine.paths.exportDir, { recursive: true });
+    await fs.writeFile(emptyPath, JSON.stringify({ exportedAt: "2026-03-30T10:00:00.000Z", events: [] }), "utf8");
+
+    const importResult = await engine.importSnapshot(emptyPath);
+    expect(importResult.eventCount).toBe(0);
+    expect(importResult.caseCount).toBe(0);
+    expect(importResult.fromExportedAt).toBe("2026-03-30T10:00:00.000Z");
+  });
+
+  it("handles snapshot with no events key", async () => {
+    const engine = await createEngine();
+    const noEventsPath = path.join(engine.paths.exportDir, "no-events.json");
+    await fs.mkdir(engine.paths.exportDir, { recursive: true });
+    await fs.writeFile(noEventsPath, JSON.stringify({ exportedAt: "2026-03-30T10:00:00.000Z", cases: [] }), "utf8");
+
+    const importResult = await engine.importSnapshot(noEventsPath);
+    expect(importResult.eventCount).toBe(0);
+    expect(importResult.caseCount).toBe(0);
+    expect(importResult.fromExportedAt).toBe("2026-03-30T10:00:00.000Z");
+  });
 });

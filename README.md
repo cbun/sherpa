@@ -247,6 +247,7 @@ After install, Sherpa adds these OpenClaw tools:
 - `workflow_rebuild`
 - `workflow_export`
 - `workflow_import`
+- `workflow_metrics`
 - `workflow_gc`
 - `workflow_ingest_event` *(optional — manual event injection)*
 

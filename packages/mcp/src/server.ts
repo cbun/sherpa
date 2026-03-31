@@ -237,6 +237,15 @@ export function createSherpaMcpServer(options: SherpaMcpOptions = {}) {
     async ({ events }) => formatMcpJsonResult(await client.ingestBatch(events))
   );
 
+  server.registerTool(
+    "workflow_metrics",
+    {
+      description: "Collect adoption, quality, efficiency, and reliability metrics for the Sherpa instance",
+      inputSchema: {}
+    },
+    async () => formatMcpJsonResult(await client.collectMetrics())
+  );
+
   return {
     client,
     server

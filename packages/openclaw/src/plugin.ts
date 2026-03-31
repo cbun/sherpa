@@ -507,11 +507,35 @@ export default definePluginEntry({
       }),
       async execute(_id, params) {
         try {
-          const engine = createEngine(pluginConfig, params);
-          const status = await engine.status();
+          const runtime = resolveRuntime(pluginConfig, params);
+          const status = await runtime.backend.status();
           return jsonResult({
             ...status,
-            advisoryEnabled: baseResolved.advisory.enabled
+            advisoryEnabled: runtime.resolved.advisory.enabled,
+            transport: {
+              mode: runtime.resolved.transport.mode,
+              ...(runtime.resolved.transport.mode === "stdio"
+                ? {
+                    command: runtime.resolved.transport.command,
+                    args: runtime.resolved.transport.args,
+                    timeoutMs: runtime.resolved.transport.timeoutMs
+                  }
+                : {})
+            },
+            capture: runtime.resolved.capture,
+            caseSplitting: {
+              enabled: runtime.resolved.caseSplitting.enabled,
+              autoEnabled: runtime.resolved.caseSplitting.auto.enabled,
+              markerCount: runtime.resolved.caseSplitting.markers.length,
+              completeMarkerCount: runtime.resolved.caseSplitting.completeMarkers.length,
+              failMarkerCount: runtime.resolved.caseSplitting.failMarkers.length
+            },
+            scope: {
+              defaultAction: runtime.resolved.scope.defaultAction,
+              ruleCount: runtime.resolved.scope.rules.length,
+              statelessPatternCount: runtime.resolved.statelessSessionPatterns.length,
+              ignorePatternCount: runtime.resolved.ignoreSessionPatterns.length
+            }
           });
         } catch (error) {
           return unavailableResult(error);

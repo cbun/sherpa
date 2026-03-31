@@ -59,7 +59,13 @@ function createResolved(storeRoot: string): ResolvedSherpaPluginConfig {
     statelessSessionPatterns: [],
     caseSplitting: {
       enabled: true,
-      markers: ["/new", "/task", "task:", "case:"]
+      markers: ["/new", "/task", "task:", "case:"],
+      auto: {
+        enabled: true,
+        idleTimeout: "30m",
+        idleTimeoutMs: 1800000,
+        minContentChars: 24
+      }
     }
   };
 }

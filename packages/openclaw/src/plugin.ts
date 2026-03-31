@@ -212,13 +212,14 @@ export default definePluginEntry({
         return;
       }
 
-      const boundary = caseRouter.startTaskBoundary({
+      const dispatchRouting = caseRouter.routeDispatch({
         policy: decision,
         sessionKey: ctx.sessionKey,
         content: event.content,
         timestamp: event.timestamp
       });
 
+      const boundary = dispatchRouting.boundary;
       if (boundary) {
         const taskRuntime = resolveRuntime(pluginConfig, {
           agentId: decision.agentId,
@@ -234,6 +235,7 @@ export default definePluginEntry({
               sessionKey: ctx.sessionKey,
               title: boundary.title,
               slug: boundary.slug,
+              reason: boundary.reason,
               timestamp: event.timestamp
             },
             { caseId: boundary.caseId }
@@ -242,12 +244,7 @@ export default definePluginEntry({
       }
 
       const activeCaseId =
-        boundary?.caseId ??
-        caseRouter.resolveActiveCaseId({
-          policy: decision,
-          sessionKey: ctx.sessionKey,
-          timestamp: event.timestamp
-        }) ??
+        dispatchRouting.caseId ??
         resolveCaptureCaseId(decision, { ...event, ...ctx });
 
       const eventRecord = buildDispatchEvent(

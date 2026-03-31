@@ -48,7 +48,13 @@ describe("resolveSherpaPluginConfig", () => {
     expect(resolved.statelessSessionPatterns).toEqual([]);
     expect(resolved.caseSplitting).toEqual({
       enabled: true,
-      markers: ["/new", "/task", "task:", "case:"]
+      markers: ["/new", "/task", "task:", "case:"],
+      auto: {
+        enabled: true,
+        idleTimeout: "30m",
+        idleTimeoutMs: 1800000,
+        minContentChars: 24
+      }
     });
     expect(resolved.advisory.enabled).toBe(false);
   });
@@ -98,7 +104,12 @@ describe("resolveSherpaPluginConfig", () => {
         statelessSessionPatterns: ["agent:beta:discord:**"],
         caseSplitting: {
           enabled: false,
-          markers: ["/focus", "ticket:"]
+          markers: ["/focus", "ticket:"],
+          auto: {
+            enabled: false,
+            idleTimeout: "10m",
+            minContentChars: 12
+          }
         }
       },
       { agentId: "beta" }
@@ -146,7 +157,13 @@ describe("resolveSherpaPluginConfig", () => {
     expect(resolved.statelessSessionPatterns).toEqual(["agent:beta:discord:**"]);
     expect(resolved.caseSplitting).toEqual({
       enabled: false,
-      markers: ["/focus", "ticket:"]
+      markers: ["/focus", "ticket:"],
+      auto: {
+        enabled: false,
+        idleTimeout: "10m",
+        idleTimeoutMs: 600000,
+        minContentChars: 12
+      }
     });
   });
 });

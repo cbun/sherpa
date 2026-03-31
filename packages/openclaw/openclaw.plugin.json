@@ -109,6 +109,15 @@
             "type": "array",
             "items": { "type": "string" },
             "default": ["/new", "/task", "task:", "case:"]
+          },
+          "auto": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "enabled": { "type": "boolean", "default": true },
+              "idleTimeout": { "type": "string", "default": "30m" },
+              "minContentChars": { "type": "integer", "minimum": 1, "default": 24 }
+            }
           }
         }
       },
@@ -181,6 +190,15 @@
     },
     "caseSplitting.markers": {
       "label": "Case Split Markers"
+    },
+    "caseSplitting.auto.enabled": {
+      "label": "Auto Split Cases"
+    },
+    "caseSplitting.auto.idleTimeout": {
+      "label": "Auto Split Idle Timeout"
+    },
+    "caseSplitting.auto.minContentChars": {
+      "label": "Auto Split Min Chars"
     },
     "capture.messages": {
       "label": "Capture Messages"

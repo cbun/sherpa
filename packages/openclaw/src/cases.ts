@@ -16,10 +16,16 @@ export type TaskBoundary = {
   caseId: string;
   title: string;
   slug: string;
+  reason: "explicit" | "auto-first-message" | "auto-idle-timeout";
+};
+
+type ActiveCaseState = {
+  caseId: string;
+  lastMessageAt: number;
 };
 
 export class SherpaCaseRouter {
-  private readonly activeCases = new Map<string, string>();
+  private readonly activeCases = new Map<string, ActiveCaseState>();
 
   constructor(private readonly config: ResolvedSherpaPluginConfig) {}
 
@@ -45,7 +51,7 @@ export class SherpaCaseRouter {
       return undefined;
     }
 
-    return this.activeCases.get(sessionKey);
+    return this.activeCases.get(sessionKey)?.caseId;
   }
 
   detectTaskBoundary(content: string) {
@@ -73,6 +79,126 @@ export class SherpaCaseRouter {
     return null;
   }
 
+  private normalizeAutomaticTitle(content: string) {
+    const normalized = content.replaceAll(/\s+/g, " ").trim();
+    if (!normalized) {
+      return null;
+    }
+
+    const firstSentence = normalized.split(/(?<=[.!?])\s+/u, 1)[0] ?? normalized;
+    const trimmed = firstSentence.replaceAll(/^[\s\-*:>#]+|[\s\-:;,.!?]+$/g, "").trim();
+
+    if (!trimmed) {
+      return null;
+    }
+
+    return trimmed.slice(0, 72);
+  }
+
+  private detectAutomaticBoundary(params: {
+    sessionKey: string;
+    content: string;
+    timestamp?: number | undefined;
+  }) {
+    if (!this.config.caseSplitting.enabled || !this.config.caseSplitting.auto.enabled) {
+      return null;
+    }
+
+    const normalizedTitle = this.normalizeAutomaticTitle(params.content);
+    if (!normalizedTitle || normalizedTitle.length < this.config.caseSplitting.auto.minContentChars) {
+      return null;
+    }
+
+    const timestamp = typeof params.timestamp === "number" ? params.timestamp : Date.now();
+    const current = this.activeCases.get(params.sessionKey);
+
+    if (!current) {
+      return {
+        title: normalizedTitle,
+        reason: "auto-first-message" as const,
+        timestamp
+      };
+    }
+
+    if (timestamp - current.lastMessageAt >= this.config.caseSplitting.auto.idleTimeoutMs) {
+      return {
+        title: normalizedTitle,
+        reason: "auto-idle-timeout" as const,
+        timestamp
+      };
+    }
+
+    this.activeCases.set(params.sessionKey, {
+      ...current,
+      lastMessageAt: timestamp
+    });
+
+    return null;
+  }
+
+  routeDispatch(params: {
+    policy: SherpaPolicyDecision;
+    sessionKey?: string | undefined;
+    content: string;
+    timestamp?: number | undefined;
+  }) {
+    if (params.policy.stateless) {
+      return {
+        boundary: null,
+        caseId: null
+      };
+    }
+
+    const sessionKey = this.normalizedSessionKey(params.sessionKey);
+    if (!sessionKey) {
+      return {
+        boundary: null,
+        caseId: null
+      };
+    }
+
+    const explicitTitle = this.detectTaskBoundary(params.content);
+    const automaticBoundary =
+      explicitTitle === null
+        ? this.detectAutomaticBoundary({
+            sessionKey,
+            content: params.content,
+            timestamp: params.timestamp
+          })
+        : null;
+
+    const title = explicitTitle ?? automaticBoundary?.title ?? null;
+    const reason = explicitTitle
+      ? ("explicit" as const)
+      : automaticBoundary?.reason ?? null;
+
+    if (!title || !reason) {
+      return {
+        boundary: null,
+        caseId: this.activeCases.get(sessionKey)?.caseId ?? null
+      };
+    }
+
+    const slug = slugify(title);
+    const timestamp = automaticBoundary?.timestamp ?? (typeof params.timestamp === "number" ? params.timestamp : Date.now());
+    const caseId = `session:${sessionKey}:task:${slug}:${timestamp}`;
+
+    this.activeCases.set(sessionKey, {
+      caseId,
+      lastMessageAt: timestamp
+    });
+
+    return {
+      boundary: {
+        caseId,
+        title,
+        slug,
+        reason
+      },
+      caseId
+    };
+  }
+
   startTaskBoundary(params: {
     policy: SherpaPolicyDecision;
     sessionKey?: string | undefined;
@@ -97,12 +223,16 @@ export class SherpaCaseRouter {
     const suffix = typeof params.timestamp === "number" ? params.timestamp : Date.now();
     const caseId = `session:${sessionKey}:task:${slug}:${suffix}`;
 
-    this.activeCases.set(sessionKey, caseId);
+    this.activeCases.set(sessionKey, {
+      caseId,
+      lastMessageAt: suffix
+    });
 
     return {
       caseId,
       title,
-      slug
+      slug,
+      reason: "explicit"
     };
   }
 

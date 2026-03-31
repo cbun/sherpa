@@ -50,6 +50,11 @@ export interface SherpaPluginConfig {
   caseSplitting?: {
     enabled?: boolean;
     markers?: string[];
+    auto?: {
+      enabled?: boolean;
+      idleTimeout?: string;
+      minContentChars?: number;
+    };
   };
   capture?: {
     messages?: boolean;
@@ -109,6 +114,12 @@ export interface ResolvedSherpaPluginConfig {
   caseSplitting: {
     enabled: boolean;
     markers: string[];
+    auto: {
+      enabled: boolean;
+      idleTimeout: string;
+      idleTimeoutMs: number;
+      minContentChars: number;
+    };
   };
 }
 
@@ -223,7 +234,13 @@ export function resolveSherpaPluginConfig(
     statelessSessionPatterns: config?.statelessSessionPatterns ?? [],
     caseSplitting: {
       enabled: config?.caseSplitting?.enabled ?? true,
-      markers: config?.caseSplitting?.markers ?? ["/new", "/task", "task:", "case:"]
+      markers: config?.caseSplitting?.markers ?? ["/new", "/task", "task:", "case:"],
+      auto: {
+        enabled: config?.caseSplitting?.auto?.enabled ?? true,
+        idleTimeout: config?.caseSplitting?.auto?.idleTimeout ?? "30m",
+        idleTimeoutMs: parseDurationMs(config?.caseSplitting?.auto?.idleTimeout, 1_800_000),
+        minContentChars: config?.caseSplitting?.auto?.minContentChars ?? 24
+      }
     }
   };
 }

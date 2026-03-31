@@ -52,6 +52,7 @@ type TaskStartCaptureInput = {
   sessionKey?: string | undefined;
   title: string;
   slug: string;
+  reason?: "explicit" | "auto-first-message" | "auto-idle-timeout";
   timestamp?: number | undefined;
 };
 
@@ -318,7 +319,10 @@ export function buildTaskStartEvent(
     type: "task.started",
     actor: "user",
     outcome: "unknown",
-    labels: [`task:${input.slug}`],
+    labels: [
+      `task:${input.slug}`,
+      ...(input.reason ? [`task-boundary:${input.reason}`] : [])
+    ],
     metrics: {
       titleChars: input.title.length
     },
@@ -326,6 +330,7 @@ export function buildTaskStartEvent(
       {
         sessionId: safeString(input.sessionId),
         sessionKey: safeString(input.sessionKey),
+        boundaryReason: safeString(input.reason),
         ...(config.ledger.redactRawText ? {} : { title: input.title })
       },
       config.ledger.maxMetaBytes

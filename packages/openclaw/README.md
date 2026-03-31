@@ -12,7 +12,7 @@ openclaw plugins install @sherpa/openclaw
 
 - captures OpenClaw session, dispatch, and tool lifecycle events
 - routes them into Sherpa's local ledger and graph
-- exposes native workflow tools such as `workflow_state` and `workflow_next`
+- exposes native workflow tools such as `workflow_state`, `workflow_next`, and `workflow_taxonomy`
 - can run embedded, CLI subprocess, or managed HTTP daemon transports
 
 See the root repository README for the broader architecture and local setup.

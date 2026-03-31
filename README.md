@@ -138,6 +138,7 @@ node packages/cli/dist/index.js --root ./.sherpa serve --host 127.0.0.1 --port 8
 - The CLI now also supports `taxonomy-report`, which measures event alphabet cardinality, rare-event share, recent new-type share, and recent-vs-baseline distribution drift so normalization quality can be gated in CI.
 - The CLI now also supports `validate`, which runs a leave-one-case-out next-step benchmark over JSON, JSONL, CSV, and XES event datasets, with capped miss output, per-event accuracy breakdown, and optional threshold-based failure for CI gating. The repo ships with synthetic JSON plus simple CSV and XES fixtures under `fixtures/validation/`.
 - `workflow_status` in the native plugin now reports plugin transport and capture/scope diagnostics in addition to core backend freshness.
+- The native plugin now also exposes `workflow_taxonomy`, so operators can inspect event-alphabet drift from OpenClaw without dropping to the Sherpa CLI.
 - GitHub Actions CI now runs typecheck, test, build, and the synthetic validation harness on pushes and pull requests.
 - Changesets-based release automation is now configured under `.changeset/` and `.github/workflows/release.yml` for version PRs and npm publication.
 

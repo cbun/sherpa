@@ -8,6 +8,8 @@ import {
   type SherpaEngineOptions,
   type SherpaEvent,
   type SherpaEventInput,
+  type TaxonomyReportOptions,
+  type TaxonomyReportResult,
   type WorkflowNextResult,
   type WorkflowRecallMode,
   type WorkflowRecallResult,
@@ -27,6 +29,7 @@ export interface SherpaBackend {
   doctor(): Promise<DoctorResult>;
   exportSnapshot(): Promise<ExportResult>;
   gc(): Promise<GcResult>;
+  taxonomyReport(options?: TaxonomyReportOptions): Promise<TaxonomyReportResult>;
   workflowState(caseId: string, maxOrder?: number): Promise<WorkflowStateResult>;
   workflowNext(caseId: string, limit?: number): Promise<WorkflowNextResult>;
   workflowRisks(caseId: string, limit?: number): Promise<WorkflowRisksResult>;
@@ -71,6 +74,10 @@ class InProcessSherpaBackend implements SherpaBackend {
 
   gc() {
     return this.engine.gc();
+  }
+
+  taxonomyReport(options?: TaxonomyReportOptions) {
+    return this.engine.taxonomyReport(options);
   }
 
   workflowState(caseId: string, maxOrder?: number) {
@@ -200,6 +207,16 @@ export class CliSherpaBackend implements SherpaBackend {
 
   gc() {
     return this.runJson<GcResult>([...buildCliSharedArgs(this.resolved), "gc"]);
+  }
+
+  taxonomyReport(options?: TaxonomyReportOptions) {
+    return this.runJson<TaxonomyReportResult>([
+      ...buildCliSharedArgs(this.resolved),
+      "taxonomy-report",
+      ...(options?.recentDays !== undefined ? ["--recent-days", String(options.recentDays)] : []),
+      ...(options?.rareSupport !== undefined ? ["--rare-support", String(options.rareSupport)] : []),
+      ...(options?.limit !== undefined ? ["--limit", String(options.limit)] : [])
+    ]);
   }
 
   workflowState(caseId: string, maxOrder?: number) {
@@ -333,6 +350,15 @@ export class HttpSherpaBackend implements SherpaBackend {
 
   gc() {
     return this.call<GcResult>("gc");
+  }
+
+  taxonomyReport(options?: TaxonomyReportOptions) {
+    return this.call<TaxonomyReportResult>("taxonomyReport", {
+      ...(options?.recentDays !== undefined ? { recentDays: options.recentDays } : {}),
+      ...(options?.rareSupport !== undefined ? { rareSupport: options.rareSupport } : {}),
+      ...(options?.limit !== undefined ? { limit: options.limit } : {}),
+      ...(options?.asOf !== undefined ? { asOf: options.asOf } : {})
+    });
   }
 
   workflowState(caseId: string, maxOrder?: number) {

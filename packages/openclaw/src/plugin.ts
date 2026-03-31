@@ -635,6 +635,34 @@ export default definePluginEntry({
       }
     });
 
+    api.registerTool({
+      name: "workflow_taxonomy",
+      label: "Workflow Taxonomy",
+      description: "Inspect Sherpa event alphabet cardinality and recent drift metrics",
+      parameters: Type.Object({
+        agentId: Type.Optional(Type.String()),
+        recentDays: Type.Optional(Type.Number({ minimum: 0 })),
+        rareSupport: Type.Optional(Type.Number({ minimum: 0 })),
+        limit: Type.Optional(Type.Number({ minimum: 0 }))
+      }),
+      async execute(_id, params) {
+        try {
+          const runtime = resolveRuntime(pluginConfig, params);
+          await daemonSupervisor.ensureReady(runtime.resolved);
+          const engine = runtime.backend;
+          return jsonResult(
+            await engine.taxonomyReport({
+              ...(typeof params.recentDays === "number" ? { recentDays: params.recentDays } : {}),
+              ...(typeof params.rareSupport === "number" ? { rareSupport: params.rareSupport } : {}),
+              ...(typeof params.limit === "number" ? { limit: params.limit } : {})
+            })
+          );
+        } catch (error) {
+          return unavailableResult(error);
+        }
+      }
+    });
+
     api.registerTool(
       {
         name: "workflow_ingest_event",

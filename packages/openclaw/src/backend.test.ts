@@ -156,6 +156,78 @@ describe("CliSherpaBackend", () => {
       caseId: "case-1"
     });
   });
+
+  it("passes taxonomy-report options to the CLI transport", async () => {
+    const spawnStub = createSpawnStub((_command, args) => {
+      expect(args).toEqual([
+        "--root",
+        "/tmp/sherpa-alpha",
+        "--default-order",
+        "3",
+        "--min-order",
+        "1",
+        "--max-order",
+        "5",
+        "--min-support",
+        "1",
+        "taxonomy-report",
+        "--recent-days",
+        "7",
+        "--rare-support",
+        "2",
+        "--limit",
+        "4"
+      ]);
+
+      return {
+        stdout: JSON.stringify({
+          generatedAt: "2026-03-31T00:00:00.000Z",
+          totalEvents: 9,
+          distinctTypes: 4,
+          rareSupport: 2,
+          topTypes: [],
+          rareTypes: [],
+          recentNewTypes: [],
+          drift: {
+            recentWindowDays: 7,
+            recentWindowStart: "2026-03-24T00:00:00.000Z",
+            baselineEventCount: 6,
+            baselineDistinctTypes: 3,
+            recentEventCount: 3,
+            recentDistinctTypes: 3,
+            newTypeCount: 1,
+            newTypeShare: 0.333,
+            rareTypeCount: 1,
+            rareEventShare: 0.111,
+            score: 0.333
+          }
+        })
+      };
+    });
+
+    const resolved = resolveSherpaPluginConfig(
+      {
+        transport: {
+          mode: "stdio"
+        },
+        store: {
+          root: "/tmp/sherpa-{agentId}"
+        }
+      },
+      { agentId: "alpha" }
+    );
+    const backend = new CliSherpaBackend(resolved, spawnStub as never);
+
+    await expect(
+      backend.taxonomyReport({
+        recentDays: 7,
+        rareSupport: 2,
+        limit: 4
+      })
+    ).resolves.toMatchObject({
+      distinctTypes: 4
+    });
+  });
 });
 
 describe("HttpSherpaBackend", () => {
@@ -201,6 +273,74 @@ describe("HttpSherpaBackend", () => {
 
     await expect(backend.workflowNext("case-1", 2)).resolves.toMatchObject({
       caseId: "case-1"
+    });
+  });
+
+  it("posts taxonomy RPC requests to the configured daemon base URL", async () => {
+    const fetchStub = vi.fn(async (_input: URL | RequestInfo, init?: RequestInit) => {
+      expect(JSON.parse(String(init?.body))).toEqual({
+        method: "taxonomyReport",
+        params: {
+          recentDays: 7,
+          rareSupport: 2,
+          limit: 4
+        }
+      });
+
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          result: {
+            generatedAt: "2026-03-31T00:00:00.000Z",
+            totalEvents: 9,
+            distinctTypes: 4,
+            rareSupport: 2,
+            topTypes: [],
+            rareTypes: [],
+            recentNewTypes: [],
+            drift: {
+              recentWindowDays: 7,
+              recentWindowStart: "2026-03-24T00:00:00.000Z",
+              baselineEventCount: 6,
+              baselineDistinctTypes: 3,
+              recentEventCount: 3,
+              recentDistinctTypes: 3,
+              newTypeCount: 1,
+              newTypeShare: 0.333,
+              rareTypeCount: 1,
+              rareEventShare: 0.111,
+              score: 0.333
+            }
+          }
+        }),
+        {
+          status: 200,
+          headers: {
+            "content-type": "application/json"
+          }
+        }
+      );
+    });
+
+    const resolved = resolveSherpaPluginConfig(
+      {
+        transport: {
+          mode: "http",
+          baseUrl: "http://127.0.0.1:8787"
+        }
+      },
+      { agentId: "alpha" }
+    );
+    const backend = new HttpSherpaBackend(resolved, fetchStub as never);
+
+    await expect(
+      backend.taxonomyReport({
+        recentDays: 7,
+        rareSupport: 2,
+        limit: 4
+      })
+    ).resolves.toMatchObject({
+      distinctTypes: 4
     });
   });
 });

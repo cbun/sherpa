@@ -66,6 +66,8 @@ export interface WorkflowRisk {
   relativeRisk: number;
   support: number;
   matchedOrder: number;
+  confidence: number;
+  score: number;
   suggestedIntervention: string;
 }
 

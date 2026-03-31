@@ -206,12 +206,16 @@ describe("SherpaEngine", () => {
         expect.objectContaining({
           branch: "missing.attachment",
           kind: "failure",
-          matchedOrder: 3
+          matchedOrder: 3,
+          confidence: 0.77,
+          score: 0.762
         }),
         expect.objectContaining({
           branch: "waiting.on.customer",
           kind: "stall",
-          matchedOrder: 3
+          matchedOrder: 3,
+          confidence: 0.77,
+          score: 0.762
         })
       ])
     );

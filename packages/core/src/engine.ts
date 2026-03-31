@@ -141,6 +141,12 @@ function suggestIntervention(branch: string, kind: WorkflowRisk["kind"]) {
   return `add validation before entering ${branch}`;
 }
 
+function riskConfidence(support: number, matchedOrder: number, defaultOrder: number) {
+  const supportConfidence = support / (support + 2);
+  const orderConfidence = matchedOrder / Math.max(1, defaultOrder);
+  return Number(Math.min(0.99, 0.35 + 0.35 * supportConfidence + 0.3 * orderConfidence).toFixed(2));
+}
+
 function longestMatchingWindow(currentState: string[], sequence: string[], maxOrder: number) {
   const limit = Math.min(maxOrder, currentState.length, sequence.length);
 
@@ -448,27 +454,34 @@ export class SherpaEngine {
         const branchProbability = Number((Number(row.support) / match.totalSupport).toFixed(2));
         const failureRate = Number(row.terminal_failure_count) / Math.max(1, Number(row.support));
         const stallRate = Number(row.terminal_unknown_count) / Math.max(1, Number(row.support));
+        const confidence = riskConfidence(Number(row.support), match.matchedOrder, this.defaultOrder);
 
         if (Number(row.terminal_failure_count) > 0 && failureRate > baselineFailureRate) {
+          const branchRelativeRisk = relativeRisk(failureRate, baselineFailureRate);
           risks.push({
             branch: row.next_event,
             kind: "failure",
             probability: branchProbability,
-            relativeRisk: relativeRisk(failureRate, baselineFailureRate),
+            relativeRisk: branchRelativeRisk,
             support: Number(row.support),
             matchedOrder: match.matchedOrder,
+            confidence,
+            score: Number((branchProbability * branchRelativeRisk * confidence).toFixed(3)),
             suggestedIntervention: suggestIntervention(row.next_event, "failure")
           });
         }
 
         if (Number(row.terminal_unknown_count) > 0 && stallRate > baselineStallRate) {
+          const branchRelativeRisk = relativeRisk(stallRate, baselineStallRate);
           risks.push({
             branch: row.next_event,
             kind: "stall",
             probability: branchProbability,
-            relativeRisk: relativeRisk(stallRate, baselineStallRate),
+            relativeRisk: branchRelativeRisk,
             support: Number(row.support),
             matchedOrder: match.matchedOrder,
+            confidence,
+            score: Number((branchProbability * branchRelativeRisk * confidence).toFixed(3)),
             suggestedIntervention: suggestIntervention(row.next_event, "stall")
           });
         }
@@ -479,6 +492,10 @@ export class SherpaEngine {
         state: match.currentState,
         risks: risks
           .sort((left, right) => {
+            if (right.score !== left.score) {
+              return right.score - left.score;
+            }
+
             if (right.relativeRisk !== left.relativeRisk) {
               return right.relativeRisk - left.relativeRisk;
             }

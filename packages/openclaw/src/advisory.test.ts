@@ -68,6 +68,8 @@ describe("buildSherpaAdvisory", () => {
             relativeRisk: 2.1,
             support: 2,
             matchedOrder: 3,
+            confidence: 0.73,
+            score: 0.307,
             suggestedIntervention: "verify attachment completeness before continuing"
           }
         ]

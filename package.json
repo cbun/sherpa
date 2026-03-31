@@ -3,6 +3,22 @@
   "version": "0.1.0",
   "private": true,
   "description": "Local-first procedural memory for OpenClaw",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cbun/sherpa.git"
+  },
+  "homepage": "https://github.com/cbun/sherpa#readme",
+  "bugs": {
+    "url": "https://github.com/cbun/sherpa/issues"
+  },
+  "keywords": [
+    "workflow-memory",
+    "procedural-memory",
+    "openclaw",
+    "mcp",
+    "agent-tools"
+  ],
   "packageManager": "pnpm@10.22.0",
   "engines": {
     "node": ">=22.0.0"
@@ -11,9 +27,13 @@
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "test": "vitest run",
-    "validate": "node packages/cli/dist/index.js validate"
+    "validate": "node packages/cli/dist/index.js validate",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "pnpm build && changeset publish"
   },
   "devDependencies": {
+    "@changesets/cli": "^2.29.7",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@types/node": "^24.6.0",
     "tsup": "^8.5.0",

@@ -2,9 +2,25 @@
   "name": "@sherpa/openclaw",
   "version": "0.1.0",
   "description": "OpenClaw plugin for Sherpa procedural memory",
+  "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cbun/sherpa.git",
+    "directory": "packages/openclaw"
+  },
+  "homepage": "https://github.com/cbun/sherpa/tree/main/packages/openclaw#readme",
+  "bugs": {
+    "url": "https://github.com/cbun/sherpa/issues"
+  },
+  "keywords": [
+    "workflow-memory",
+    "procedural-memory",
+    "openclaw",
+    "plugin"
+  ],
   "files": [
     "dist",
     "openclaw.plugin.json"

@@ -2,10 +2,26 @@
   "name": "sherpa",
   "version": "0.1.0",
   "description": "CLI for Sherpa procedural memory",
+  "license": "MIT",
   "type": "module",
   "bin": {
     "sherpa": "./dist/index.js"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cbun/sherpa.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/cbun/sherpa/tree/main/packages/cli#readme",
+  "bugs": {
+    "url": "https://github.com/cbun/sherpa/issues"
+  },
+  "keywords": [
+    "workflow-memory",
+    "procedural-memory",
+    "cli",
+    "openclaw"
+  ],
   "files": [
     "dist"
   ],

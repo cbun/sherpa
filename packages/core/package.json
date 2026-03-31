@@ -2,9 +2,25 @@
   "name": "@sherpa/core",
   "version": "0.1.0",
   "description": "Sherpa core ledger and workflow graph engine",
+  "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cbun/sherpa.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://github.com/cbun/sherpa/tree/main/packages/core#readme",
+  "bugs": {
+    "url": "https://github.com/cbun/sherpa/issues"
+  },
+  "keywords": [
+    "workflow-memory",
+    "procedural-memory",
+    "graph-memory",
+    "openclaw"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

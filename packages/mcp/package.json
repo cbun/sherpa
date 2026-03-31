@@ -2,9 +2,25 @@
   "name": "@sherpa/mcp",
   "version": "0.1.0",
   "description": "MCP stdio server for Sherpa procedural memory",
+  "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cbun/sherpa.git",
+    "directory": "packages/mcp"
+  },
+  "homepage": "https://github.com/cbun/sherpa/tree/main/packages/mcp#readme",
+  "bugs": {
+    "url": "https://github.com/cbun/sherpa/issues"
+  },
+  "keywords": [
+    "workflow-memory",
+    "procedural-memory",
+    "mcp",
+    "openclaw"
+  ],
   "bin": {
     "sherpa-mcp": "./dist/index.js",
     "sherpa-mcp-http": "./dist/http.js"

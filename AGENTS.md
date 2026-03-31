@@ -63,6 +63,7 @@ Use these as the default verification commands:
 pnpm typecheck
 pnpm test
 pnpm build
+pnpm validate --dataset fixtures/validation/synthetic-workflows.json --top-k 3
 ```
 
 For CLI smoke checks:
@@ -75,6 +76,7 @@ node packages/cli/dist/index.js --root ./.sherpa workflow-status
 ## Git and Commits
 
 - Use conventional commit messages.
+- Use Changesets for package-facing changes before release: `pnpm changeset`.
 - Prefer scopes when useful, for example:
   - `feat(core): ...`
   - `fix(cli): ...`

@@ -133,6 +133,7 @@ node packages/cli/dist/index.js --root ./.sherpa serve --host 127.0.0.1 --port 8
 - The CLI now also supports `validate`, which runs a leave-one-case-out next-step benchmark over canonical JSON or JSONL event datasets. The repo ships with `fixtures/validation/synthetic-workflows.json` as a built-in synthetic corpus.
 - `workflow_status` in the native plugin now reports plugin transport and capture/scope diagnostics in addition to core backend freshness.
 - GitHub Actions CI now runs typecheck, test, build, and the synthetic validation harness on pushes and pull requests.
+- Changesets-based release automation is now configured under `.changeset/` and `.github/workflows/release.yml` for version PRs and npm publication.
 
 ## Research Direction
 
@@ -176,4 +177,3 @@ That leads to a few practical implementation rules:
 - Improve automatic boundary heuristics beyond phrase and token-overlap rules
 - Add stronger outcome handling beyond explicit terminal markers, session-end cleanup, and stale active-case expiry
 - Expand the validation harness from synthetic traces to larger real event-log datasets
-- Add release/versioning automation once package boundaries settle

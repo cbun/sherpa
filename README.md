@@ -1,133 +1,408 @@
 # Sherpa
 
-Sherpa is a procedural memory layer for OpenClaw.
+Sherpa is a local-first procedural memory layer for [OpenClaw](https://github.com/openclaw/openclaw).
 
-Rather than storing only facts or whole conversations, it models recurring workflow structure:
+It watches the events an OpenClaw agent already produces — sessions starting, tools firing, tasks completing — and learns the *shape* of recurring work. Not facts, not conversation history: workflow structure.
 
-- what usually comes next
-- where tasks often get stuck
-- which paths tend to end successfully
+After enough observations, Sherpa can tell the agent what usually comes next, which branches tend to fail, and how similar past tasks resolved. It does this without any remote service, extra LLM calls, or changes to how you use OpenClaw.
 
-It runs locally, watches the workflow events OpenClaw already produces, and derives a compact process memory from them.
+## Why This Exists
 
-The problem it is trying to solve is simple:
-as OpenClaw sessions grow longer, useful procedural context is often mixed together with too much conversational surface area.
-That makes next-step guidance brittle. Context gets compacted, sessions restart, summaries drift, and the model is left to reconstruct the shape of the work from a noisy partial trace.
+Agent sessions have a specific memory problem that RAG and conversation history don't solve well.
 
-## Procedural Memory
+As sessions grow, context windows fill up. Compaction kicks in. Sessions restart. Summaries drift. The agent loses its sense of *where it is in the work* — not what it knows, but what step it's on and what tends to follow.
 
-OpenClaw is already good at acting inside the current turn.
-Sherpa is concerned with continuity across turns and across sessions.
+Semantic memory answers "what do I know about X?" Sherpa answers "what usually happens next from here, and which paths tend to go badly?"
 
-In practice that means:
+These are different questions, and they need different data structures.
 
-- suggest likely next steps for the task it is currently in
-- warn when a path often leads to failure or stalls
-- recall similar past task flows
-- keep this memory on your machine instead of sending it to a remote service
+## How It Works
 
-## In Practice
+### Event Capture
 
-You ask OpenClaw to work on something.
-Sherpa quietly watches the flow.
-Later, on a similar task, Sherpa can say:
+Sherpa hooks into OpenClaw's plugin lifecycle. Every session start, message, tool call, task boundary, and session end becomes a typed event:
 
-- "This usually goes: inspect repo -> patch -> test -> complete."
-- "This branch often gets blocked after env checks."
-- "The last successful cases took a different path."
-
-It is not trying to be magic.
-It is trying to be useful, local, and explainable.
-
-## System Sketch
-
-```mermaid
-flowchart LR
-  subgraph OC["OpenClaw"]
-    A["Session and messages"]
-    B["Tool calls and results"]
-    C["Task boundaries and outcomes"]
-  end
-
-  subgraph PL["Sherpa plugin"]
-    D["Scope rules and redaction"]
-    E["Case routing"]
-    F["Typed event normalization"]
-  end
-
-  subgraph ST["Local Sherpa store"]
-    G["Append-only event ledger"]
-    H["Derived workflow graph"]
-  end
-
-  subgraph RT["Runtime queries"]
-    I["workflow_state"]
-    J["workflow_next"]
-    K["workflow_risks"]
-    L["workflow_recall"]
-  end
-
-  A --> D
-  B --> D
-  C --> D
-  D --> E --> F --> G
-  G --> H
-  H --> I
-  H --> J
-  H --> K
-  H --> L
+```
+session.started → message.received → tool.started → tool.succeeded → task.completed → session.ended
 ```
 
-Sherpa is local-first.
-Its working memory is built from typed events such as session starts, messages, tool calls, task boundaries, and task endings.
+Events are normalized, redacted (raw text stripped by default), tagged with taxonomy labels, and appended to a local JSONL ledger. Each event belongs to a **case** — typically a session, but configurable via case routing rules.
 
-## Observed Failure Modes
+The capture layer (`capture.ts`) classifies tools into families (browser, web, automation, generic tool) and applies user-defined taxonomy rules to remap types, outcomes, or labels before storage.
 
-Sherpa is aimed at a fairly specific class of failure in long-running agent sessions.
+### The Graph: Variable-Order Markov Model
 
-OpenClaw's own memory troubleshooting material explicitly calls out:
+The core data structure is a **variable-order Markov model** over event type sequences, stored as n-gram state edges in SQLite.
 
-- context overflow and aggressive compaction
-- loss of context mid-conversation or after gateway restarts
-- memory logs not being written reliably when gateway or filesystem conditions are wrong
-- conflicts between some memory features and other interaction modes such as voice
+During `rebuild()`, Sherpa reads the full event ledger and computes:
 
-Public bug reports show another adjacent failure mode: state from one session can leak into the next. For example, issue `#58353` reports stale system-summary text being prepended to the first message of a new session after `/new` or `/reset`.
+1. **State edges** — For each case's event sequence, it generates n-grams of orders 1 through `maxOrder` (default 3). Each n-gram records: the state key (event suffix), the next event type, observation count (support), success/failure counts at the transition level, terminal outcome counts (did the *case* eventually succeed/fail/stall?), and timing statistics (total/min/max duration to next event).
 
-Sherpa does not solve provider outages, gateway crashes, or transport bugs by itself.
-What it does is move one important class of memory away from the most brittle substrate.
-Instead of asking the model to carry the whole conversational surface in its prompt, Sherpa learns a smaller procedural trace outside the prompt itself.
+2. **Cases** — Per-case aggregates: event count, time span, terminal outcome inferred from the final events.
 
-More concretely, Sherpa is intended to mitigate these pressures:
+3. **Materialized tables** — Workflow aggregates, risk metrics, success metrics, and config version history, all derived from the edges and cases.
 
-- compaction pressure: a short typed event path is much cheaper to preserve than a fully expanded conversation
-- session contamination: case routing gives memory a narrower unit than "whatever was most recently in context"
-- brittle long-horizon continuity: an append-only local ledger survives beyond any single prompt window and can be rebuilt into the same workflow graph
-- semantic overreach: next-step guidance is drawn from bounded observed continuations, not an unrestricted retrieval space
+The key insight is **de Bruijn-style suffix fallback**. When querying state, Sherpa tries the longest matching suffix first (order = `defaultOrder`). If support is below `minSupport`, it drops to shorter suffixes until it finds a match or bottoms out at `minOrder`. This gives high-context predictions when data is rich and graceful degradation when it's sparse.
 
-Selected sources:
+```
+State: [tool.started → tool.succeeded → task.completed]
 
-- [OpenClaw memory troubleshooting guide](https://www.getopenclaw.ai/help/memory-search-setup-guide)
-- [OpenClaw issue #58353](https://github.com/openclaw/openclaw/issues/58353)
-- [OpenClaw issue tracker](https://github.com/openclaw/openclaw/issues)
+Order 3 match: "tool.started → tool.succeeded → task.completed" → 12 observations
+  → session.ended (8x, 67%, 90% eventual success)
+  → tool.started (3x, 25%, 75% eventual success)
+  → message.received (1x, 8%, eventual outcome unknown)
 
-## Using Sherpa With OpenClaw
+If order 3 has < minSupport observations, fall back to order 2:
+  "tool.succeeded → task.completed" → 45 observations (broader, less specific)
+```
 
-### 1. Install the plugin
+### State Resolution (`workflowState`)
+
+Given a case ID, Sherpa pulls the most recent events (up to `defaultOrder`), forms the state suffix, and finds the best matching edge set using the suffix fallback strategy.
+
+Returns: current state, matched order, confidence (log-scaled from support: `0.45 + log10(support + 1) / 3`, capped at 0.99), and the matched workflow label if any event carries one.
+
+### Next-Step Prediction (`workflowNext`)
+
+From the matched state, Sherpa reads all outgoing edges and scores each candidate branch:
+
+```
+score = probability × qualityScore
+
+where:
+  probability = branch_support / total_support
+  qualityScore = 0.55
+                + 0.25 × (eventual_success_rate or 0.5)
+                + 0.10 × support_confidence        # support / (support + 2)
+                + 0.10 × order_confidence           # matched_order / default_order
+                - 0.25 × (eventual_failure_rate or 0)
+```
+
+Candidates are sorted by score (tiebreak: probability → success rate → support) and returned with full provenance: probability, support count, success/failure rates, mean time to next event, matched order, and a human-readable reason string.
+
+### Risk Detection (`workflowRisks`)
+
+For each outgoing branch, Sherpa computes:
+
+- **Failure rate** — what fraction of observations through this branch ended in a failed case
+- **Stall rate** — what fraction ended in an unknown/abandoned outcome
+- **Relative risk** — branch rate divided by the baseline rate across all branches from this state
+
+Branches where failure or stall rate exceeds the baseline are flagged as risks. Each risk includes a confidence score (weighted blend of support confidence and order confidence), a composite score (`probability × relativeRisk × confidence`), and a suggested intervention (heuristic-based: attachment checks, approval prerequisites, or generic checkpoint advice).
+
+### Recall (`workflowRecall`)
+
+Finds past cases whose event sequences contain the current state suffix, using a sliding window match. For each match, it extracts the **continuation** — what happened after the matching point — and scores it:
+
+```
+score = overlap × continuationSignal × outcomeWeight
+
+where:
+  overlap = matched_order / state_length
+  continuationSignal = min(1, continuation_length / 4)
+  outcomeWeight = 1.0 (success) | 0.85 (failure) | 0.65 (unknown)
+```
+
+Supports filtering by outcome mode: `successful`, `failed`, or `any`. Returns the continuation sequence, distance metric, and full scoring breakdown.
+
+### Advisory Injection
+
+When enabled, Sherpa injects procedural guidance into the agent's context before each prompt via the `before_prompt_build` lifecycle hook:
+
+1. Query `workflowState`, `workflowNext`, and `workflowRisks` for the current case
+2. Pass results to `buildSherpaAdvisory()` which formats a bounded text block
+3. Return as `{ prependContext: advisory }` for OpenClaw to inject
+
+**Gating:**
+- Confidence must exceed `injectThreshold` (default 0.75)
+- Must have at least one candidate or risk to report
+- 2-minute per-case cooldown prevents spamming every turn
+- Scope rules control which chats receive advisories (direct only by default)
+- Output capped at `maxChars` (default 900)
+
+**Tracking:**
+- Each injection increments an `advisoryInjections` counter in the metadata table
+- No extra LLM calls — advisory text is deterministically generated from graph data
+
+Example advisory output:
+
+```
+Sherpa advisory
+Current state: tool.started → tool.succeeded → task.completed
+Confidence: 0.82
+Likely next:
+1. session.ended (67%)
+2. tool.started (25%)
+Top risk:
+- message.received branch has high stall risk
+Suggested action:
+- set a checkpoint and fallback path before entering message.received
+```
+
+## Architecture
+
+```
+sherpa/
+├── packages/
+│   ├── core/          # Engine, graph, store, ledger, types
+│   ├── cli/           # CLI interface + validation suite
+│   ├── openclaw/      # OpenClaw plugin (capture, advisory, case routing, tools)
+│   ├── sdk/           # Programmatic client wrapping the engine
+│   └── mcp/           # MCP server (stdio + HTTP transports)
+└── fixtures/          # Validation datasets
+```
+
+pnpm monorepo. Node ≥ 22 (uses `node:sqlite` natively). TypeScript throughout, built with tsup, tested with vitest.
+
+### Core (`@sherpa/core`)
+
+The engine (`engine.ts`) owns all stateful operations:
+
+- **Ledger** — Append-only JSONL files in `{root}/events/`. Each event is a `SherpaEvent` validated by Zod (`SherpaEventSchema`). Events are immutable once written.
+
+- **Graph store** — SQLite database at `{root}/graph.db` with 8 tables:
+  - `events` — denormalized copy of all ledger events (rebuilt from scratch)
+  - `cases` — per-case aggregates (event count, time span, terminal outcome)
+  - `state_edges` — the n-gram transition model (primary key: order + state_key + next_event)
+  - `metadata` — key-value store for engine state (rebuild count, config, counters)
+  - `workflows` — materialized workflow-level aggregates (by label)
+  - `risk_metrics` — materialized failure/stall risk scores per state+branch
+  - `success_metrics` — materialized success/failure rates per state+branch
+  - `config_versions` — tracks engine configuration changes over time
+
+- **Rebuild** — Deterministic: reads full ledger, computes all derived tables, writes atomically. The graph is always reconstructable from the ledger. WAL mode + busy timeout for concurrent access.
+
+- **GC** — Vacuums the database, cleans temp and old export files.
+
+- **Doctor** — Health checks: ledger readability, graph consistency, metadata integrity.
+
+- **Export/Import** — Full snapshot export (events + graph metadata) to JSON. Import with deduplication (skips events already present by ID).
+
+- **Metrics** — `collectMetrics()` returns adoption (event/case counts, 7-day active cases), quality (advisory injection count), efficiency (mean case duration), and reliability (rebuild count, corruption count).
+
+### OpenClaw Plugin (`@sherpa/openclaw`)
+
+The plugin (`plugin.ts`) integrates with OpenClaw's plugin SDK:
+
+**Lifecycle hooks:**
+- `session_started` / `session_ended` — capture session boundary events
+- `before_dispatch` — capture inbound messages
+- `task_started` / `task_ended` — capture task boundary events
+- `tool_started` / `tool_finished` — capture tool execution events
+- `before_prompt_build` — advisory injection point
+
+**Event processing:**
+- Events are batched in memory and flushed periodically (debounced) or on session end
+- Scope rules (`ScopeDecision`) evaluate each event context against allow/deny rules before capture
+- Case routing maps events to case IDs (default: session-based, configurable)
+- Taxonomy rules can remap event types, outcomes, or add labels based on pattern matching
+
+**Transport backends:**
+- `embedded` — Engine runs in-process. Simplest setup, no IPC overhead.
+- `stdio` — Shells out to the `sherpa` CLI for each operation. Useful for isolation.
+- `http` — Connects to a managed HTTP daemon. Plugin auto-starts/stops the process. Best for warm-process performance with process isolation.
+
+All three implement the same `SherpaBackend` interface.
+
+**Tools registered (14):**
+
+| Tool | Description |
+|------|-------------|
+| `workflow_status` | Health check: event/case counts, freshness, config |
+| `workflow_state` | Current state for a case (suffix, confidence, matched order) |
+| `workflow_next` | Ranked next-step candidates with scoring breakdown |
+| `workflow_risks` | Failure/stall risk analysis with interventions |
+| `workflow_recall` | Similar past paths filtered by outcome |
+| `workflow_taxonomy` | Event type distribution, drift detection, rare types |
+| `workflow_analytics` | Hot transitions, failure branches, stall branches |
+| `workflow_doctor` | Diagnostic health checks |
+| `workflow_rebuild` | Force graph rebuild from ledger |
+| `workflow_export` | Export full snapshot to JSON |
+| `workflow_import` | Import snapshot with dedup |
+| `workflow_metrics` | Adoption/quality/efficiency/reliability metrics |
+| `workflow_gc` | Garbage collection |
+| `workflow_ingest_event` | Manual event injection (for testing/backfill) |
+
+### SDK (`@sherpa/sdk`)
+
+Thin wrapper around the engine for programmatic use:
+
+```typescript
+import { SherpaClient } from "@sherpa/sdk";
+
+const client = new SherpaClient({ rootDir: "./my-sherpa-data" });
+
+await client.ingest({ caseId: "task-123", source: "my-app", type: "step.completed" });
+await client.rebuild();
+
+const next = await client.workflowNext("task-123");
+console.log(next.candidates);
+```
+
+### MCP Server (`@sherpa/mcp`)
+
+Exposes the engine over [Model Context Protocol](https://modelcontextprotocol.io/) via stdio or HTTP:
+
+```bash
+# stdio mode
+sherpa mcp
+
+# HTTP mode (default port 8787)
+sherpa mcp --http --port 8787
+```
+
+Registers the same tool set as the OpenClaw plugin, usable from any MCP-compatible client.
+
+### CLI (`@sherpa/cli`)
+
+Direct command-line access to all engine operations:
+
+```bash
+sherpa --root ./.sherpa status
+sherpa --root ./.sherpa workflow-next --case-id case-123
+sherpa --root ./.sherpa workflow-risks --case-id case-123
+sherpa --root ./.sherpa workflow-recall --case-id case-123 --mode successful
+sherpa --root ./.sherpa taxonomy-report --recent-days 14
+sherpa --root ./.sherpa analytics-report --limit 10
+```
+
+Also includes a **validation suite** for testing prediction accuracy against labeled datasets:
+
+```bash
+sherpa validate-suite --input fixtures/validation/suite.json --max-failing-datasets 10
+```
+
+## Data Model
+
+### SherpaEvent
+
+Every observation is a `SherpaEvent`:
+
+```typescript
+{
+  eventId: string;          // UUID, auto-generated
+  schemaVersion: 1;         // Always 1
+  agentId: string;          // Which agent produced this
+  caseId: string;           // Groups events into workflow instances
+  ts: string;               // ISO-8601 timestamp
+  source: string;           // Origin (e.g., "openclaw.session", "openclaw.tool")
+  type: string;             // Typed event (e.g., "session.started", "tool.succeeded")
+  actor: string;            // "user", "agent", or "system"
+  outcome: "success" | "failure" | "unknown";
+  labels: string[];         // Taxonomy labels (e.g., "tool:web_search", "workflow:meeting-prep")
+  entities: string[];       // Named entities (unused currently)
+  metrics: Record<string, number>;  // Numeric measurements (e.g., durationMs, contentChars)
+  meta: Record<string, unknown>;    // Structured metadata (redacted by default)
+}
+```
+
+Validated by Zod at ingestion. Schema is append-only — once written, events are never modified.
+
+### State Edges
+
+The core of the Markov model. Each row represents: "after seeing event sequence X (at order N), event Y followed Z times."
+
+```sql
+CREATE TABLE state_edges (
+  order_n INTEGER NOT NULL,           -- n-gram order (1 to maxOrder)
+  state_key TEXT NOT NULL,            -- "event_a → event_b → event_c"
+  next_event TEXT NOT NULL,           -- what followed
+  support INTEGER NOT NULL,           -- observation count
+  success_count INTEGER NOT NULL,     -- transitions where next_event had outcome=success
+  failure_count INTEGER NOT NULL,     -- transitions where next_event had outcome=failure
+  terminal_success_count INTEGER,     -- cases through this edge that eventually succeeded
+  terminal_failure_count INTEGER,     -- cases through this edge that eventually failed
+  terminal_unknown_count INTEGER,     -- cases through this edge that stalled/abandoned
+  total_duration_ms INTEGER,          -- cumulative time between current and next event
+  min_duration_ms INTEGER,
+  max_duration_ms INTEGER,
+  last_seen_at TEXT NOT NULL,
+  PRIMARY KEY (order_n, state_key, next_event)
+);
+```
+
+## Configuration
+
+Full config with defaults:
+
+```json
+{
+  "transport": {
+    "mode": "embedded"
+  },
+  "engine": {
+    "defaultOrder": 3,
+    "minOrder": 1,
+    "maxOrder": 5,
+    "minSupport": 2
+  },
+  "advisory": {
+    "enabled": true,
+    "injectThreshold": 0.75,
+    "maxCandidates": 3,
+    "maxRisks": 2,
+    "maxChars": 900,
+    "scope": "direct"
+  },
+  "scope": {
+    "default": "deny",
+    "rules": [
+      { "action": "allow", "match": { "chatType": "direct" } }
+    ]
+  },
+  "capture": {
+    "messages": true,
+    "tools": true,
+    "browser": true,
+    "web": true,
+    "automation": true
+  },
+  "ledger": {
+    "redactRawText": true,
+    "maxMetaBytes": 2048
+  },
+  "taxonomy": {
+    "rules": []
+  }
+}
+```
+
+**Engine tuning:**
+- `defaultOrder` — Primary n-gram order for predictions. Higher = more specific but needs more data. Default 3.
+- `minOrder` — Lowest order for suffix fallback. Default 1.
+- `maxOrder` — Highest order computed during rebuild. Default 5.
+- `minSupport` — Minimum total support to consider an edge set valid. Default 2.
+
+**Taxonomy rules** let you remap events before storage:
+
+```json
+{
+  "taxonomy": {
+    "rules": [
+      {
+        "match": { "kind": "tool", "toolName": "web_search" },
+        "set": { "type": "research.web_search", "labels": ["phase:research"] }
+      }
+    ]
+  }
+}
+```
+
+## Installation
 
 Sherpa is not yet published to the plugin registry. Install from a local build:
 
 ```bash
+git clone https://github.com/cbun/sherpa.git
 cd sherpa
-pnpm install && pnpm build
+pnpm install
+pnpm build
 
-# then link or point OpenClaw at the local package
+# Link or point OpenClaw at the local package
 openclaw plugins install --local ./packages/openclaw
 ```
 
-### 2. Add a small config block
-
-Copy this into your OpenClaw plugin config for `sherpa`:
+### Quick Start Config
 
 ```json
 {
@@ -136,18 +411,12 @@ Copy this into your OpenClaw plugin config for `sherpa`:
       "sherpa": {
         "enabled": true,
         "config": {
-          "transport": {
-            "mode": "embedded"
-          },
-          "advisory": {
-            "enabled": true,
-            "injectThreshold": 0.75
-          },
+          "transport": { "mode": "embedded" },
+          "advisory": { "enabled": true, "injectThreshold": 0.75 },
           "scope": {
             "default": "deny",
             "rules": [
-              { "action": "allow", "match": { "chatType": "direct" } },
-              { "action": "allow", "match": { "chatType": "dm" } }
+              { "action": "allow", "match": { "chatType": "direct" } }
             ]
           }
         }
@@ -157,266 +426,26 @@ Copy this into your OpenClaw plugin config for `sherpa`:
 }
 ```
 
-A ready-to-copy example also lives at [`docs/examples/openclaw-sherpa.config.json`](./docs/examples/openclaw-sherpa.config.json).
-
-### 3. Restart OpenClaw
-
-That is enough to get Sherpa running.
-
-By default, Sherpa stores data under:
-
-```text
-~/.openclaw/agents/{agentId}/sherpa
-```
-
-## Conservative Defaults
-
-For most people, start with:
-
-- `transport.mode = embedded`
-- advisory enabled
-- scope limited to direct messages and DMs
-- raw text redaction left on
-
-That gives you the easiest setup and the safest privacy posture.
-
-## A Minimal Example
-
-Without Sherpa:
-
-- OpenClaw handles each task on its own
-
-With Sherpa:
-
-- OpenClaw can recognize "this looks like the same sort of task as before"
-- it can suggest the next likely move
-- it can warn when a branch often leads to blockage
-- it can recall how successful cases finished
-
-## What It Actually Feels Like
-
-Think about how a good human assistant learns your habits.
-
-After a few weeks, they don't just do what you ask — they anticipate.
-They remember that you always want coffee before the 9am call, not because you told them a rule, but because they watched it happen five times.
-They remember that last time you tried to book a restaurant the day-of, it didn't work out, so now they nudge you to book earlier.
-They're not smarter than they were on day one. They just have *muscle memory* for how your work tends to go.
-
-That's what Sherpa gives OpenClaw.
-
-### Without Sherpa
-
-You say: "I have a call with Acme Corp in an hour, help me prep."
-
-OpenClaw checks your calendar, drafts some talking points. Fine.
-
-Next week, different company, same ask. It starts from scratch. Doesn't remember that last time you also wanted the most recent email thread pulled. Doesn't remember you always prefer bullets over paragraphs. Doesn't know that 4 out of 5 times, you follow up with "what did we discuss last time?" — something it could have just done upfront.
-
-Every meeting prep is day one.
-
-### With Sherpa
-
-After a handful of meeting preps, Sherpa has seen the workflow shape:
-
-`calendar-check → email-search → prior-notes → talking-points → summary`
-
-It has also noticed that when it *skips* the email search, you come back and ask for it most of the time. That's a stall pattern.
-
-So now when you say "prep me for the Acme call," the advisory injects:
-
-> *Meeting prep flows typically follow: calendar → recent emails → prior notes → talking points. Skipping email lookup leads to a follow-up request 4 out of 5 times. Last 3 successful preps averaged 2 minutes.*
-
-OpenClaw now front-loads the email pull and the prior context without you asking.
-
-It learned your **process**, not your **facts**. That distinction matters. Facts change, but the shape of how you work is remarkably stable — and remarkably useful once something is paying attention to it.
-
-The same thing applies to anything you do repeatedly: research tasks, weekly reviews, trip planning, inbox triage. Sherpa turns your habits into guardrails.
-
-## OpenClaw Tools
-
-After install, Sherpa adds these OpenClaw tools:
-
-- `workflow_status`
-- `workflow_state`
-- `workflow_next`
-- `workflow_risks`
-- `workflow_recall`
-- `workflow_taxonomy`
-- `workflow_analytics`
-- `workflow_doctor`
-- `workflow_rebuild`
-- `workflow_export`
-- `workflow_import`
-- `workflow_metrics`
-- `workflow_gc`
-- `workflow_ingest_event` *(optional — manual event injection)*
-
-The most useful ones for day-to-day use are:
-
-- `workflow_next`: what usually comes next from here
-- `workflow_risks`: where this path often fails or stalls
-- `workflow_recall`: similar past paths and how they continued
-- `workflow_status`: whether Sherpa is healthy and capturing properly
-
-## Transport Modes
-
-### Simple local setup
-
-Use embedded mode when you want the least setup:
-
-```json
-{
-  "transport": {
-    "mode": "embedded"
-  }
-}
-```
-
-### CLI subprocess mode
-
-Use this if you want the plugin to shell out to the `sherpa` CLI:
-
-```json
-{
-  "transport": {
-    "mode": "stdio",
-    "command": "sherpa"
-  }
-}
-```
-
-### Managed HTTP daemon
-
-Use this if you want a warm local process managed by the plugin:
-
-```json
-{
-  "transport": {
-    "mode": "http",
-    "baseUrl": "http://127.0.0.1:8787",
-    "manageProcess": true
-  }
-}
-```
-
-## Local First
-
-Sherpa is designed to be conservative by default.
-
-- it stores data locally
-- raw message text is redacted by default
-- scope defaults to deny unless allowed by rules
-- you can ignore session patterns entirely
-- you can mark some sessions as stateless
-
-If you want Sherpa to remember less, tighten scope rules first.
-
-## Process View
-
-```mermaid
-flowchart TD
-  A["Recent typed event suffix
-  inspect -> patch -> test"] --> B["Current workflow state"]
-
-  B --> C["Observed continuation:
-  complete
-  support: high
-  success rate: high"]
-
-  B --> D["Observed continuation:
-  env-check
-  support: medium
-  stall rate: elevated"]
-
-  B --> E["Observed continuation:
-  rewrite
-  support: low
-  failure rate: elevated"]
-
-  C --> F["Sherpa can rank likely next steps"]
-  D --> G["Sherpa can warn about risky branches"]
-  E --> H["Sherpa can recall similar bad endings"]
-```
-
-## Mechanism and Theory
-
-Sherpa can be described, a little loosely, as a procedural memory layer for OpenClaw.
-
-It does not try to answer "what do I know about this topic?" and it does not mainly try to answer "what was said before?"
-It is closer to:
-
-- what path are we on
-- what usually follows this path
-- which branches tend to resolve well
-- which branches tend to fail or go quiet
-
-This is one answer to a recurring tension in agent systems:
-semantic memory is often too broad for moment-to-moment workflow steering, while raw conversation history is too expensive and fragile to carry indefinitely.
-
-The internal model is intentionally structured rather than fuzzy.
-Sherpa keeps an append-only local event ledger, then derives a workflow graph from those events.
-Recent event suffixes act as the current state; observed continuations become candidate next moves.
-
-Later theory for this project comes from a mix of:
-
-- higher-order Markov models
-- de Bruijn-style overlap ideas
-- process mining
-- graph-shaped memory systems
-
-That academic background matters mostly because it shapes the retrieval behavior:
-
-- advice stays bounded to plausible next branches instead of searching an endless memory space
-- repeated workflow phases compress into reusable paths
-- suggestions can be explained with support, success, failure, and timing rather than only vague similarity
-
-The design hypothesis is that this changes the failure surface in a useful way:
-
-- if the prompt must be compacted, the learned workflow trace can still persist outside the prompt
-- if a session is restarted, the durable ledger still preserves the path that was taken
-- if the recent chat surface is noisy, retrieval can still operate over typed transitions rather than raw text similarity
-- if memory grows large, bounded event types and typed transitions keep retrieval closer to a process model than a free-form note pile
-
-Sherpa is predictive, not oracular.
-It notices regularities in how work tends to unfold.
-
-## For Power Users
-
-Sherpa also ships with:
-
-- a CLI package: [`packages/cli`](./packages/cli)
-- an OpenClaw plugin package: [`packages/openclaw`](./packages/openclaw)
-- an SDK: [`packages/sdk`](./packages/sdk)
-- an MCP server: [`packages/mcp`](./packages/mcp)
-
-If you want the research background, see [`docs/research.pdf`](./docs/research.pdf).
-
-The product spec is kept locally and is not checked into the repository.
+Restart OpenClaw. Data stores under `~/.openclaw/agents/{agentId}/sherpa/` by default.
 
 ## Local Development
 
 ```bash
 pnpm install
 pnpm build
-pnpm test
-pnpm validate-suite --input fixtures/validation/suite.json --max-failing-datasets 10
-```
+pnpm test           # 71 tests across all packages
+pnpm typecheck      # All 5 packages
 
-Useful local commands:
+# Validation suite
+pnpm validate-suite --input fixtures/validation/suite.json
 
-```bash
+# Direct CLI usage
 node packages/cli/dist/index.js --root ./.sherpa status
 node packages/cli/dist/index.js --root ./.sherpa workflow-next --case-id case-123
-node packages/cli/dist/index.js --root ./.sherpa workflow-risks --case-id case-123
-node packages/cli/dist/index.js --root ./.sherpa workflow-recall --case-id case-123 --mode successful
-node packages/cli/dist/index.js --root ./.sherpa taxonomy-report --recent-days 14 --max-types 50 --max-drift-score 0.2
-node packages/cli/dist/index.js --root ./.sherpa analytics-report --limit 10
 ```
 
 ## Current State
 
-Sherpa is already usable and production-oriented, but it is still improving in one important area:
-ranking quality.
+Sherpa is usable and production-oriented. The capture pipeline, graph engine, advisory injection, all tools, SDK, MCP server, and CLI are complete and tested.
 
-The system already captures, stores, retrieves, and explains workflow memory well.
-The main future gains are in making its suggestions even smarter as validation corpora grow.
+The main area for future improvement is ranking quality — making predictions smarter as validation corpora grow and real-world usage patterns emerge.

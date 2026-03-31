@@ -1,6 +1,8 @@
 import type { SherpaEventInput } from "@sherpa/core";
 import { Type } from "@sinclair/typebox";
+import { z } from "zod";
 import { jsonResult } from "openclaw/plugin-sdk/agent-runtime";
+import { buildPluginConfigSchema } from "openclaw/plugin-sdk/core";
 import { definePluginEntry } from "openclaw/plugin-sdk/core";
 
 import {
@@ -114,10 +116,98 @@ function resolveCaptureCaseId(
   });
 }
 
+const sherpaConfigZodSchema = z.object({
+  transport: z.object({
+    mode: z.enum(["embedded", "stdio", "http"]).optional(),
+    command: z.string().optional(),
+    args: z.array(z.string()).optional(),
+    baseUrl: z.string().optional(),
+    manageProcess: z.boolean().optional(),
+    timeoutMs: z.number().optional(),
+    env: z.record(z.string(), z.string()).optional()
+  }).optional(),
+  store: z.object({
+    root: z.string().optional()
+  }).optional(),
+  ledger: z.object({
+    redactRawText: z.boolean().optional(),
+    maxMetaBytes: z.number().optional()
+  }).optional(),
+  order: z.object({
+    default: z.number().optional(),
+    min: z.number().optional(),
+    max: z.number().optional(),
+    backoff: z.boolean().optional(),
+    minSupport: z.number().optional()
+  }).optional(),
+  advisory: z.object({
+    enabled: z.boolean().optional(),
+    injectThreshold: z.number().optional(),
+    maxCandidates: z.number().optional(),
+    maxRisks: z.number().optional(),
+    maxChars: z.number().optional()
+  }).optional(),
+  capture: z.object({
+    messages: z.boolean().optional(),
+    tools: z.boolean().optional(),
+    browser: z.boolean().optional(),
+    web: z.boolean().optional(),
+    automation: z.boolean().optional(),
+    memoryWrites: z.boolean().optional()
+  }).optional(),
+  taxonomy: z.object({
+    rules: z.array(z.object({
+      match: z.object({
+        kind: z.enum(["message", "session", "task", "tool"]).optional(),
+        sourcePattern: z.string().optional(),
+        typePattern: z.string().optional()
+      }).optional(),
+      rewrite: z.object({
+        type: z.string().optional(),
+        source: z.string().optional()
+      }).optional(),
+      drop: z.boolean().optional()
+    })).optional()
+  }).optional(),
+  scope: z.object({
+    default: z.enum(["allow", "deny"]).optional(),
+    rules: z.array(z.object({
+      action: z.enum(["allow", "deny"]),
+      match: z.object({
+        chatType: z.string().optional(),
+        sessionKeyPrefix: z.string().optional(),
+        normalizedKeyPrefix: z.string().optional()
+      }).optional()
+    })).optional()
+  }).optional(),
+  update: z.object({
+    onBoot: z.boolean().optional(),
+    interval: z.string().optional(),
+    debounceMs: z.number().optional(),
+    commandTimeoutMs: z.number().optional(),
+    rebuildOnVersionChange: z.boolean().optional()
+  }).optional(),
+  ignoreSessionPatterns: z.array(z.string()).optional(),
+  statelessSessionPatterns: z.array(z.string()).optional()
+});
+
+const sherpaPluginConfigSchema = buildPluginConfigSchema(sherpaConfigZodSchema, {
+  uiHints: {
+    "advisory.enabled": { label: "Enable advisory", help: "Inject procedural hints before major decision turns" },
+    "advisory.injectThreshold": { label: "Advisory confidence threshold", help: "Minimum confidence to inject advisory (0-1)" },
+    "order.default": { label: "Default graph order", help: "Default suffix length for workflow state matching" },
+    "update.interval": { label: "Maintenance interval", help: "How often to run background graph maintenance (e.g. 5m)" },
+    "scope.default": { label: "Default scope", help: "Allow or deny event capture by default" },
+    "ledger.redactRawText": { label: "Redact raw text", help: "Strip raw message text from ledger events" },
+    "transport.mode": { label: "Transport mode", help: "How the plugin communicates with the Sherpa engine (embedded, stdio, http)" }
+  }
+});
+
 export default definePluginEntry({
   id: "sherpa",
   name: "Sherpa",
   description: "Procedural workflow memory for OpenClaw",
+  configSchema: sherpaPluginConfigSchema,
   register(api) {
     const pluginConfig = (api.config?.plugins?.entries?.sherpa?.config ?? {}) as SherpaPluginConfig;
     const baseResolved = resolveSherpaPluginConfig(pluginConfig);

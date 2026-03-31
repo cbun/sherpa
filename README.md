@@ -201,7 +201,9 @@ After install, Sherpa adds these OpenClaw tools:
 - `workflow_doctor`
 - `workflow_rebuild`
 - `workflow_export`
+- `workflow_import`
 - `workflow_gc`
+- `workflow_ingest_event` *(optional — manual event injection)*
 
 The most useful ones for day-to-day use are:
 
@@ -343,7 +345,7 @@ Sherpa also ships with:
 
 If you want the research background, see [`docs/research.pdf`](./docs/research.pdf).
 
-If you want the product spec, see [`prd/sherpa-prd.md`](./prd/sherpa-prd.md).
+The product spec is kept locally and is not checked into the repository.
 
 ## Local Development
 

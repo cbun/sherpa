@@ -209,6 +209,13 @@ export interface ExportResult {
   stateCount: number;
 }
 
+export interface ImportResult {
+  importedAt: string;
+  eventCount: number;
+  caseCount: number;
+  fromExportedAt: string | null;
+}
+
 export interface GcResult {
   vacuumed: boolean;
   removedTmpFiles: number;

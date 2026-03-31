@@ -6,6 +6,7 @@ import {
   type DoctorResult,
   type ExportResult,
   type GcResult,
+  type ImportResult,
   type SherpaEngineOptions,
   type SherpaEvent,
   type SherpaEventInput,
@@ -78,6 +79,10 @@ export class SherpaClient {
 
   exportSnapshot(): Promise<ExportResult> {
     return this.engine.exportSnapshot();
+  }
+
+  importSnapshot(snapshotPath: string): Promise<ImportResult> {
+    return this.engine.importSnapshot(snapshotPath);
   }
 
   gc(): Promise<GcResult> {

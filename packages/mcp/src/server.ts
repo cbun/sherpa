@@ -175,6 +175,17 @@ export function createSherpaMcpServer(options: SherpaMcpOptions = {}) {
   );
 
   server.registerTool(
+    "workflow_import",
+    {
+      description: "Import a previously exported Sherpa snapshot (JSON file)",
+      inputSchema: {
+        snapshotPath: z.string()
+      }
+    },
+    async ({ snapshotPath }) => formatMcpJsonResult(await client.importSnapshot(snapshotPath))
+  );
+
+  server.registerTool(
     "workflow_ingest_event",
     {
       description: "Append a canonical event into Sherpa's ledger",

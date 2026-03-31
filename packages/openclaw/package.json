@@ -48,7 +48,8 @@
   "dependencies": {
     "@sherpa/core": "workspace:*",
     "@sinclair/typebox": "^0.34.49",
-    "openclaw": "^2026.3.28"
+    "openclaw": "^2026.3.28",
+    "zod": "^4.3.6"
   },
   "publishConfig": {
     "access": "public"

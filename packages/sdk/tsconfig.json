@@ -2,8 +2,9 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "baseUrl": ".",
-    "paths": {},
-    "rootDir": "src",
+    "paths": {
+      "@sherpa/core": ["../core/src/index.ts"]
+    },
     "outDir": "dist"
   },
   "include": ["src/**/*.ts"]

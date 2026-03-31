@@ -13,6 +13,7 @@ import {
   type DoctorResult,
   type ExportResult,
   type GcResult,
+  type ImportResult,
   type SherpaEngineOptions,
   type SherpaEvent,
   type SherpaEventInput,
@@ -1036,9 +1037,16 @@ export class SherpaEngine {
         )
         .all();
 
+      const events = (
+        db
+          .prepare("SELECT event_id, schema_version, agent_id, case_id, ts, source, type, actor, outcome, labels_json, entities_json, metrics_json, meta_json FROM events ORDER BY ts ASC, event_id ASC")
+          .all() as StoredEventRow[]
+      ).map(deserializeEvent);
+
       return {
         exportedAt,
         status: null as unknown,
+        events,
         cases,
         stateEdges
       };
@@ -1055,6 +1063,48 @@ export class SherpaEngine {
       eventCount: status.events,
       caseCount: status.cases,
       stateCount: status.states
+    };
+  }
+
+  async importSnapshot(snapshotPath: string): Promise<ImportResult> {
+    await this.init();
+
+    const importedAt = new Date().toISOString();
+    const raw = await fs.readFile(snapshotPath, "utf8");
+    const snapshot = JSON.parse(raw) as {
+      exportedAt?: string;
+      events?: SherpaEvent[];
+    };
+
+    const fromExportedAt = typeof snapshot.exportedAt === "string" ? snapshot.exportedAt : null;
+    const snapshotEvents = Array.isArray(snapshot.events) ? snapshot.events : [];
+
+    if (snapshotEvents.length === 0) {
+      return {
+        importedAt,
+        eventCount: 0,
+        caseCount: 0,
+        fromExportedAt
+      };
+    }
+
+    const ledgerEvents = await readLedger(this.paths.eventsDir);
+    const existingIds = new Set(ledgerEvents.map((event) => event.eventId));
+    const newEvents = snapshotEvents.filter((event) => !existingIds.has(event.eventId));
+
+    if (newEvents.length > 0) {
+      await appendEvents(this.paths.eventsDir, newEvents);
+    }
+
+    await this.rebuild();
+
+    const status = await this.status();
+
+    return {
+      importedAt,
+      eventCount: status.events,
+      caseCount: status.cases,
+      fromExportedAt
     };
   }
 

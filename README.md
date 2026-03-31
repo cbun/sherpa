@@ -55,6 +55,7 @@ Sherpa should be thought of as a predictive temporal layer, not a causal oracle.
 pnpm install
 pnpm build
 pnpm test
+pnpm validate --dataset fixtures/validation/synthetic-workflows.json
 ```
 
 Create an event JSON file:
@@ -81,6 +82,7 @@ node packages/cli/dist/index.js --root ./.sherpa workflow-state --case-id case-1
 node packages/cli/dist/index.js --root ./.sherpa workflow-next --case-id case-123
 node packages/cli/dist/index.js --root ./.sherpa workflow-risks --case-id case-123
 node packages/cli/dist/index.js --root ./.sherpa workflow-recall --case-id case-123 --mode successful
+node packages/cli/dist/index.js validate --dataset fixtures/validation/synthetic-workflows.json --top-k 3
 ```
 
 Or use the SDK directly:
@@ -128,7 +130,9 @@ node packages/cli/dist/index.js --root ./.sherpa serve --host 127.0.0.1 --port 8
 - The MCP package now supports stdio plus a minimal stateless streamable HTTP deployment path with a `/health` endpoint for local sidecar/service use.
 - The CLI now supports `ingest-batch` so subprocess transports can flush event bursts efficiently.
 - The CLI now also supports `serve`, exposing a small local JSON HTTP daemon at `/health` and `/rpc`, and the OpenClaw plugin can optionally manage that daemon process itself in HTTP mode with health checks and restart backoff supervision.
+- The CLI now also supports `validate`, which runs a leave-one-case-out next-step benchmark over canonical JSON or JSONL event datasets. The repo ships with `fixtures/validation/synthetic-workflows.json` as a built-in synthetic corpus.
 - `workflow_status` in the native plugin now reports plugin transport and capture/scope diagnostics in addition to core backend freshness.
+- GitHub Actions CI now runs typecheck, test, build, and the synthetic validation harness on pushes and pull requests.
 
 ## Research Direction
 
@@ -171,6 +175,5 @@ That leads to a few practical implementation rules:
 - Improve recall/risk scoring beyond the current heuristic layer
 - Improve automatic boundary heuristics beyond phrase and token-overlap rules
 - Add stronger outcome handling beyond explicit terminal markers, session-end cleanup, and stale active-case expiry
-- Define a validation harness using synthetic workflow traces and real event-log datasets
-- Add CI under `.github/workflows/`
+- Expand the validation harness from synthetic traces to larger real event-log datasets
 - Add release/versioning automation once package boundaries settle

@@ -6,6 +6,8 @@ import process from "node:process";
 import { SherpaEngine, type SherpaEventInput, type WorkflowRecallMode } from "@sherpa/core";
 import { Command, type Command as CommandInstance } from "commander";
 
+import { validateDatasetFile } from "./validate.js";
+
 function defaultRoot() {
   return path.join(process.cwd(), ".sherpa");
 }
@@ -355,6 +357,30 @@ program
     });
 
     process.stdout.write(`Sherpa daemon listening on http://${host}:${port}\n`);
+  });
+
+program
+  .command("validate")
+  .description("Run next-step validation against a canonical Sherpa dataset")
+  .option("--dataset <file>", "JSON or JSONL validation dataset", path.join(process.cwd(), "fixtures/validation/synthetic-workflows.json"))
+  .option("--top-k <n>", "Maximum candidate window for accuracy scoring", "3")
+  .action(async (options, command) => {
+    const globals = command.optsWithGlobals() as {
+      root?: string;
+      defaultOrder?: string;
+      minOrder?: string;
+      maxOrder?: string;
+      minSupport?: string;
+    };
+    const report = await validateDatasetFile(options.dataset, {
+      rootParent: globals.root ?? defaultRoot(),
+      ...(globals.defaultOrder ? { defaultOrder: parseInteger(globals.defaultOrder, "--default-order") } : {}),
+      ...(globals.minOrder ? { minOrder: parseInteger(globals.minOrder, "--min-order") } : {}),
+      ...(globals.maxOrder ? { maxOrder: parseInteger(globals.maxOrder, "--max-order") } : {}),
+      ...(globals.minSupport ? { minSupport: parseInteger(globals.minSupport, "--min-support") } : {}),
+      topK: parseInteger(options.topK, "--top-k")
+    });
+    printJson(report);
   });
 
 program.parseAsync(process.argv).catch((error: unknown) => {

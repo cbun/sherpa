@@ -1,0 +1,66 @@
+{
+  "name": "synthetic-workflows",
+  "description": "Small synthetic workflow corpus for next-step validation across code, docs, and blocked task branches.",
+  "cases": [
+    {
+      "caseId": "fix-success-1",
+      "events": [
+        { "source": "openclaw.dispatch", "type": "request.received" },
+        { "source": "tool.repo", "type": "repo.inspected" },
+        { "source": "tool.test", "type": "tests.run" },
+        { "source": "tool.edit", "type": "patch.applied", "outcome": "success" },
+        { "source": "tool.test", "type": "tests.passed", "outcome": "success" },
+        { "source": "openclaw.task", "type": "task.completed", "outcome": "success" }
+      ]
+    },
+    {
+      "caseId": "fix-success-2",
+      "events": [
+        { "source": "openclaw.dispatch", "type": "request.received" },
+        { "source": "tool.repo", "type": "repo.inspected" },
+        { "source": "tool.test", "type": "tests.run" },
+        { "source": "tool.edit", "type": "patch.applied", "outcome": "success" },
+        { "source": "tool.test", "type": "tests.passed", "outcome": "success" },
+        { "source": "openclaw.task", "type": "task.completed", "outcome": "success" }
+      ]
+    },
+    {
+      "caseId": "docs-success-1",
+      "events": [
+        { "source": "openclaw.dispatch", "type": "request.received" },
+        { "source": "tool.repo", "type": "repo.inspected" },
+        { "source": "tool.docs", "type": "docs.updated", "outcome": "success" },
+        { "source": "openclaw.task", "type": "task.completed", "outcome": "success" }
+      ]
+    },
+    {
+      "caseId": "fix-success-3",
+      "events": [
+        { "source": "openclaw.dispatch", "type": "request.received" },
+        { "source": "tool.repo", "type": "repo.inspected" },
+        { "source": "tool.test", "type": "tests.run" },
+        { "source": "tool.edit", "type": "patch.applied", "outcome": "success" },
+        { "source": "tool.test", "type": "tests.passed", "outcome": "success" },
+        { "source": "openclaw.task", "type": "task.completed", "outcome": "success" }
+      ]
+    },
+    {
+      "caseId": "blocked-1",
+      "events": [
+        { "source": "openclaw.dispatch", "type": "request.received" },
+        { "source": "tool.repo", "type": "repo.inspected" },
+        { "source": "tool.env", "type": "env.blocked", "outcome": "failure" },
+        { "source": "openclaw.task", "type": "task.failed", "outcome": "failure" }
+      ]
+    },
+    {
+      "caseId": "blocked-2",
+      "events": [
+        { "source": "openclaw.dispatch", "type": "request.received" },
+        { "source": "tool.repo", "type": "repo.inspected" },
+        { "source": "tool.env", "type": "env.blocked", "outcome": "failure" },
+        { "source": "openclaw.task", "type": "task.failed", "outcome": "failure" }
+      ]
+    }
+  ]
+}

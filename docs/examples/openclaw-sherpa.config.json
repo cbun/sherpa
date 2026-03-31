@@ -1,0 +1,38 @@
+{
+  "plugins": {
+    "entries": {
+      "sherpa": {
+        "enabled": true,
+        "config": {
+          "transport": {
+            "mode": "embedded"
+          },
+          "advisory": {
+            "enabled": true,
+            "injectThreshold": 0.75
+          },
+          "scope": {
+            "default": "deny",
+            "rules": [
+              {
+                "action": "allow",
+                "match": {
+                  "chatType": "direct"
+                }
+              },
+              {
+                "action": "allow",
+                "match": {
+                  "chatType": "dm"
+                }
+              }
+            ]
+          },
+          "ignoreSessionPatterns": [
+            "agent:*:cron:**"
+          ]
+        }
+      }
+    }
+  }
+}

@@ -34,6 +34,12 @@ export interface ValidationEventBreakdown {
   topKAccuracy: number;
 }
 
+export interface ValidationThresholds {
+  minTop1Accuracy?: number;
+  minTopKAccuracy?: number;
+  maxMissCount?: number;
+}
+
 export interface ValidationReport {
   dataset: {
     name: string;
@@ -551,4 +557,34 @@ export async function validateDatasetFile(
       format: dataset.format
     }
   };
+}
+
+export function assertValidationThresholds(report: ValidationReport, thresholds?: ValidationThresholds) {
+  if (!thresholds) {
+    return;
+  }
+
+  if (
+    typeof thresholds.minTop1Accuracy === "number" &&
+    report.nextTop1Accuracy < thresholds.minTop1Accuracy
+  ) {
+    throw new Error(
+      `Validation top1 accuracy ${report.nextTop1Accuracy.toFixed(3)} is below required minimum ${thresholds.minTop1Accuracy.toFixed(3)}`
+    );
+  }
+
+  if (
+    typeof thresholds.minTopKAccuracy === "number" &&
+    report.nextTopKAccuracy < thresholds.minTopKAccuracy
+  ) {
+    throw new Error(
+      `Validation topK accuracy ${report.nextTopKAccuracy.toFixed(3)} is below required minimum ${thresholds.minTopKAccuracy.toFixed(3)}`
+    );
+  }
+
+  if (typeof thresholds.maxMissCount === "number" && report.missCount > thresholds.maxMissCount) {
+    throw new Error(
+      `Validation miss count ${report.missCount} exceeds allowed maximum ${thresholds.maxMissCount}`
+    );
+  }
 }

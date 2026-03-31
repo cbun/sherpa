@@ -6,7 +6,7 @@ import process from "node:process";
 import { SherpaEngine, type SherpaEventInput, type WorkflowRecallMode } from "@sherpa/core";
 import { Command, type Command as CommandInstance } from "commander";
 
-import { validateDatasetFile } from "./validate.js";
+import { assertValidationThresholds, validateDatasetFile } from "./validate.js";
 
 function defaultRoot() {
   return path.join(process.cwd(), ".sherpa");
@@ -17,6 +17,16 @@ function parseInteger(value: string, label: string) {
 
   if (!Number.isFinite(parsed) || parsed < 0) {
     throw new Error(`${label} must be a non-negative integer`);
+  }
+
+  return parsed;
+}
+
+function parseRatio(value: string, label: string) {
+  const parsed = Number.parseFloat(value);
+
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) {
+    throw new Error(`${label} must be a number between 0 and 1`);
   }
 
   return parsed;
@@ -374,6 +384,9 @@ program
   .option("--csv-delimiter <char>", "CSV delimiter for tabular imports", ",")
   .option("--top-k <n>", "Maximum candidate window for accuracy scoring", "3")
   .option("--max-misses <n>", "Maximum number of miss examples to include in the report", "25")
+  .option("--min-top1 <ratio>", "Fail if top1 accuracy drops below this ratio")
+  .option("--min-topk <ratio>", "Fail if topK accuracy drops below this ratio")
+  .option("--max-miss-count <n>", "Fail if total miss count exceeds this number")
   .action(async (options, command) => {
     const globals = command.optsWithGlobals() as {
       root?: string;
@@ -399,6 +412,11 @@ program
       ...(globals.minSupport ? { minSupport: parseInteger(globals.minSupport, "--min-support") } : {}),
       topK: parseInteger(options.topK, "--top-k"),
       maxMisses: parseInteger(options.maxMisses, "--max-misses")
+    });
+    assertValidationThresholds(report, {
+      ...(options.minTop1 ? { minTop1Accuracy: parseRatio(options.minTop1, "--min-top1") } : {}),
+      ...(options.minTopk ? { minTopKAccuracy: parseRatio(options.minTopk, "--min-topk") } : {}),
+      ...(options.maxMissCount ? { maxMissCount: parseInteger(options.maxMissCount, "--max-miss-count") } : {})
     });
     printJson(report);
   });

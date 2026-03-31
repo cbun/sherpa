@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { loadValidationDataset, runValidationDataset } from "./validate.js";
+import { assertValidationThresholds, loadValidationDataset, runValidationDataset } from "./validate.js";
 
 describe("validation harness", () => {
   it("loads JSONL datasets and groups events by case", async () => {
@@ -145,5 +145,59 @@ describe("validation harness", () => {
 
     expect(report.missCount).toBeGreaterThanOrEqual(report.misses.length);
     expect(report.misses).toHaveLength(1);
+  });
+
+  it("fails threshold checks when validation metrics regress below required bounds", () => {
+    expect(() =>
+      assertValidationThresholds(
+        {
+          dataset: {
+            name: "demo",
+            description: null,
+            path: "demo.json",
+            format: "json"
+          },
+          cases: 2,
+          datasetEvents: 6,
+          evaluatedSteps: 4,
+          nextTop1Accuracy: 0.25,
+          nextTopKAccuracy: 0.5,
+          topK: 3,
+          missCount: 2,
+          eventBreakdown: [],
+          misses: []
+        },
+        {
+          minTop1Accuracy: 0.4
+        }
+      )
+    ).toThrow(/top1 accuracy/i);
+
+    expect(() =>
+      assertValidationThresholds(
+        {
+          dataset: {
+            name: "demo",
+            description: null,
+            path: "demo.json",
+            format: "json"
+          },
+          cases: 2,
+          datasetEvents: 6,
+          evaluatedSteps: 4,
+          nextTop1Accuracy: 0.5,
+          nextTopKAccuracy: 0.75,
+          topK: 3,
+          missCount: 1,
+          eventBreakdown: [],
+          misses: []
+        },
+        {
+          minTop1Accuracy: 0.4,
+          minTopKAccuracy: 0.7,
+          maxMissCount: 2
+        }
+      )
+    ).not.toThrow();
   });
 });

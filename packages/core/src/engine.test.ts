@@ -225,6 +225,8 @@ describe("SherpaEngine", () => {
       caseId: "case-1",
       outcome: "success",
       matchedOrder: 3,
+      confidence: 1,
+      score: 0.75,
       continuation: ["approval.needed", "approval.granted", "report.sent"]
     });
 
@@ -233,6 +235,8 @@ describe("SherpaEngine", () => {
       caseId: "case-2",
       outcome: "failure",
       matchedOrder: 3,
+      confidence: 0.84,
+      score: 0.425,
       continuation: ["missing.attachment", "review.failed"]
     });
   });

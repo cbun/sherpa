@@ -82,6 +82,8 @@ export interface WorkflowRecallPath {
   distance: number;
   outcome: SherpaOutcome;
   matchedOrder: number;
+  confidence: number;
+  score: number;
   continuation: string[];
 }
 

@@ -13,6 +13,7 @@ import {
   type SherpaEngineOptions,
   type SherpaEvent,
   type SherpaEventInput,
+  type SherpaOutcome,
   type WorkflowNextCandidate,
   type WorkflowNextResult,
   type WorkflowRecallMode,
@@ -166,6 +167,31 @@ function longestMatchingWindow(currentState: string[], sequence: string[], maxOr
   }
 
   return null;
+}
+
+function recallConfidence(params: {
+  matchedOrder: number;
+  stateLength: number;
+  continuationLength: number;
+  outcome: SherpaOutcome;
+}) {
+  const overlap = params.matchedOrder / Math.max(1, params.stateLength);
+  const continuationSignal = Math.min(1, params.continuationLength / 3);
+  const outcomeSignal = params.outcome === "success" ? 1 : params.outcome === "failure" ? 0.75 : 0.5;
+
+  return Number((0.45 * overlap + 0.3 * continuationSignal + 0.25 * outcomeSignal).toFixed(2));
+}
+
+function recallScore(params: {
+  matchedOrder: number;
+  stateLength: number;
+  continuationLength: number;
+  outcome: SherpaOutcome;
+}) {
+  const overlap = params.matchedOrder / Math.max(1, params.stateLength);
+  const continuationSignal = Math.min(1, params.continuationLength / 4);
+  const outcomeWeight = params.outcome === "success" ? 1 : params.outcome === "failure" ? 0.85 : 0.65;
+  return Number((overlap * continuationSignal * outcomeWeight).toFixed(3));
 }
 
 export class SherpaEngine {
@@ -528,13 +554,18 @@ export class SherpaEngine {
       const candidateCases = db
         .prepare(
           `
-            SELECT case_id, terminal_outcome
+            SELECT case_id, terminal_outcome, event_count, last_seen_at
             FROM cases
             WHERE case_id != ?
             ORDER BY last_seen_at DESC, case_id ASC
           `
         )
-        .all(caseId) as Array<{ case_id: string; terminal_outcome: SherpaEvent["outcome"] }>;
+        .all(caseId) as Array<{
+          case_id: string;
+          terminal_outcome: SherpaEvent["outcome"];
+          event_count: number;
+          last_seen_at: string;
+        }>;
 
       const paths: WorkflowRecallPath[] = [];
 
@@ -573,6 +604,18 @@ export class SherpaEngine {
           distance: Number((1 - match.matchedOrder / currentState.state.length).toFixed(2)),
           outcome: candidate.terminal_outcome,
           matchedOrder: match.matchedOrder,
+          confidence: recallConfidence({
+            matchedOrder: match.matchedOrder,
+            stateLength: currentState.state.length,
+            continuationLength: match.continuation.length,
+            outcome: candidate.terminal_outcome
+          }),
+          score: recallScore({
+            matchedOrder: match.matchedOrder,
+            stateLength: currentState.state.length,
+            continuationLength: match.continuation.length,
+            outcome: candidate.terminal_outcome
+          }),
           continuation: match.continuation.slice(0, 8)
         });
       }
@@ -583,6 +626,14 @@ export class SherpaEngine {
         mode,
         paths: paths
           .sort((left, right) => {
+            if (right.score !== left.score) {
+              return right.score - left.score;
+            }
+
+            if (right.confidence !== left.confidence) {
+              return right.confidence - left.confidence;
+            }
+
             if (right.matchedOrder !== left.matchedOrder) {
               return right.matchedOrder - left.matchedOrder;
             }

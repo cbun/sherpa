@@ -11,6 +11,8 @@ Sherpa now has an alpha implementation:
 - `@sherpa/core`: append-only ledger, batched ingest, derived SQLite graph, and retrieval primitives
 - `sherpa`: CLI for ingest, rebuild, status, workflow-status, doctor, export, gc, workflow state, workflow next, workflow risks, and workflow recall
 - `@sherpa/openclaw`: native OpenClaw plugin package with manifest, config schema, lifecycle event capture, explicit task-boundary case splitting, scope controls, maintenance, and native tool registration over the core engine
+- `@sherpa/sdk`: Node/Bun SDK wrapper over the same core query model
+- `@sherpa/mcp`: MCP server package with stdio and stateless streamable HTTP transports over the SDK/core query model
 
 The product requirements document remains the product source of truth at [`prd/sherpa-prd.md`](./prd/sherpa-prd.md).
 
@@ -19,6 +21,8 @@ The product requirements document remains the product source of truth at [`prd/s
 - `packages/core`: core engine and types
 - `packages/cli`: publishable CLI package
 - `packages/openclaw`: OpenClaw plugin adapter
+- `packages/sdk`: publishable Node/Bun SDK package
+- `packages/mcp`: publishable MCP server package
 
 ## Theory
 
@@ -79,6 +83,35 @@ node packages/cli/dist/index.js --root ./.sherpa workflow-risks --case-id case-1
 node packages/cli/dist/index.js --root ./.sherpa workflow-recall --case-id case-123 --mode successful
 ```
 
+Or use the SDK directly:
+
+```ts
+import { SherpaClient } from "@sherpa/sdk";
+
+const sherpa = SherpaClient.forAgent({ agentId: "main" });
+
+await sherpa.ingest({
+  caseId: "case-123",
+  source: "tool.docs",
+  type: "docs.requested",
+  outcome: "success"
+});
+
+const next = await sherpa.workflowNext("case-123");
+```
+
+Or run the MCP stdio server:
+
+```bash
+node packages/mcp/dist/index.js --agent-id main
+```
+
+Or run the MCP HTTP server:
+
+```bash
+node packages/mcp/dist/http.js --agent-id main --host 127.0.0.1 --port 8787
+```
+
 ## Notes
 
 - The current storage backend uses Node 22's built-in `node:sqlite`, which still emits an experimental warning.
@@ -86,6 +119,7 @@ node packages/cli/dist/index.js --root ./.sherpa workflow-recall --case-id case-
 - The engine now supports minimum-support variable-order backoff, richer status/freshness reporting, JSON snapshot export, and graph maintenance via `gc`.
 - Risk and recall are still alpha-grade heuristics built from eventual case outcomes and suffix matching; they are useful now, but not yet the final retrieval model described in the PRD.
 - The OpenClaw package now captures session lifecycle, inbound dispatch, and tool lifecycle events with redacted-by-default metadata, debounced per-store batching, periodic maintenance, conservative scope rules, ignore/stateless session patterns, explicit task-boundary case splitting from configurable markers, optional bounded advisory injection, and structured degraded responses when the backend is unavailable.
+- The MCP package now supports stdio plus a minimal stateless streamable HTTP deployment path with a `/health` endpoint for local sidecar/service use.
 - Richer automatic case splitting beyond explicit boundaries is still to come.
 
 ## Research Direction
@@ -120,12 +154,13 @@ That leads to a few practical implementation rules:
 - `sherpa-prd.md`: product requirements
 - `packages/core`: core engine
 - `packages/cli`: CLI package
+- `packages/sdk`: SDK package
+- `packages/mcp`: MCP package
 - `docs/`: design notes, ADRs, and integration docs
 
 ## Next Steps
 
 - Add OpenClaw richer automatic case splitting beyond explicit boundaries
-- Add MCP and SDK surfaces for the standalone core
 - Improve recall/risk scoring beyond the current heuristic layer
 - Define a validation harness using synthetic workflow traces and real event-log datasets
 - Add CI under `.github/workflows/`

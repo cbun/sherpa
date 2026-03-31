@@ -16,6 +16,8 @@ The core idea is:
 - `packages/core`: canonical engine implementation
 - `packages/cli`: thin CLI wrapper over `@sherpa/core`
 - `packages/openclaw`: native OpenClaw plugin adapter over `@sherpa/core`
+- `packages/sdk`: Node/Bun SDK wrapper over `@sherpa/core`
+- `packages/mcp`: MCP stdio and HTTP server over `@sherpa/sdk`
 - `prd/sherpa-prd.md`: product and architecture source of truth
 - `docs/research.pdf`: research background for the higher-order workflow model
 

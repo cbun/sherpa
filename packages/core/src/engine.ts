@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
 
 import { appendEvent, ensureDir, readLedger } from "./ledger.js";
 import { buildDerivedRows, stateKeyFromEvents } from "./graph.js";
@@ -7,20 +8,140 @@ import { resolveSherpaPaths } from "./paths.js";
 import { insertCases, insertEvents, insertStateEdges, resetDerivedTables, setMetadata, withGraphStore } from "./store.js";
 import {
   type DoctorResult,
+  type ExportResult,
+  type GcResult,
   type SherpaEngineOptions,
   type SherpaEvent,
   type SherpaEventInput,
   type WorkflowNextCandidate,
   type WorkflowNextResult,
+  type WorkflowRecallMode,
+  type WorkflowRecallPath,
+  type WorkflowRecallResult,
+  type WorkflowRisk,
+  type WorkflowRisksResult,
   type WorkflowStateResult,
   type WorkflowStatusResult
 } from "./types.js";
+
+type StoredEventRow = {
+  event_id: string;
+  schema_version: number;
+  agent_id: string;
+  case_id: string;
+  ts: string;
+  source: string;
+  type: string;
+  actor: string;
+  outcome: SherpaEvent["outcome"];
+  labels_json: string;
+  entities_json: string;
+  metrics_json: string;
+  meta_json: string;
+};
+
+type StateEdgeRow = {
+  next_event: string;
+  support: number;
+  success_count: number;
+  failure_count: number;
+  terminal_success_count: number;
+  terminal_failure_count: number;
+  terminal_unknown_count: number;
+  total_duration_ms: number;
+};
+
+function deserializeEvent(row: StoredEventRow): SherpaEvent {
+  return {
+    eventId: row.event_id,
+    schemaVersion: row.schema_version as 1,
+    agentId: row.agent_id,
+    caseId: row.case_id,
+    ts: row.ts,
+    source: row.source,
+    type: row.type,
+    actor: row.actor,
+    outcome: row.outcome,
+    labels: JSON.parse(row.labels_json) as string[],
+    entities: JSON.parse(row.entities_json) as string[],
+    metrics: JSON.parse(row.metrics_json) as Record<string, number>,
+    meta: JSON.parse(row.meta_json) as Record<string, unknown>
+  };
+}
+
+function confidenceFromSupport(support: number) {
+  return support === 0 ? 0 : Number(Math.min(0.99, 0.45 + Math.log10(support + 1) / 3).toFixed(2));
+}
+
+function ageFromTimestamp(timestamp: string | null) {
+  if (!timestamp) {
+    return null;
+  }
+
+  const ageMs = Date.now() - Date.parse(timestamp);
+  return Number.isFinite(ageMs) ? Math.max(0, ageMs) : null;
+}
+
+function eventualSuccessRate(row: StateEdgeRow) {
+  const knownOutcomes = Number(row.terminal_success_count) + Number(row.terminal_failure_count);
+  return knownOutcomes === 0 ? null : Number((Number(row.terminal_success_count) / knownOutcomes).toFixed(2));
+}
+
+function relativeRisk(rate: number, baselineRate: number) {
+  if (rate <= 0) {
+    return 0;
+  }
+
+  if (baselineRate <= 0) {
+    return 99;
+  }
+
+  return Number((rate / baselineRate).toFixed(2));
+}
+
+function suggestIntervention(branch: string, kind: WorkflowRisk["kind"]) {
+  if (branch.includes("attachment")) {
+    return "verify required attachments before continuing";
+  }
+
+  if (branch.includes("approval")) {
+    return "confirm approval owner and prerequisites before entering this branch";
+  }
+
+  if (kind === "stall") {
+    return `set a checkpoint and fallback path before entering ${branch}`;
+  }
+
+  return `add validation before entering ${branch}`;
+}
+
+function longestMatchingWindow(currentState: string[], sequence: string[], maxOrder: number) {
+  const limit = Math.min(maxOrder, currentState.length, sequence.length);
+
+  for (let order = limit; order >= 1; order -= 1) {
+    const suffix = currentState.slice(-order);
+
+    for (let endIndex = order - 1; endIndex < sequence.length; endIndex += 1) {
+      const window = sequence.slice(endIndex - order + 1, endIndex + 1);
+
+      if (window.length === order && window.every((event, index) => event === suffix[index])) {
+        return {
+          matchedOrder: order,
+          continuation: sequence.slice(endIndex + 1)
+        };
+      }
+    }
+  }
+
+  return null;
+}
 
 export class SherpaEngine {
   readonly rootDir: string;
   readonly defaultOrder: number;
   readonly minOrder: number;
   readonly maxOrder: number;
+  readonly minSupport: number;
   readonly paths: ReturnType<typeof resolveSherpaPaths>;
 
   constructor(options: SherpaEngineOptions) {
@@ -28,12 +149,16 @@ export class SherpaEngine {
     this.defaultOrder = options.defaultOrder ?? 3;
     this.minOrder = options.minOrder ?? 1;
     this.maxOrder = options.maxOrder ?? 5;
+    this.minSupport = options.minSupport ?? 1;
     this.paths = resolveSherpaPaths(options.rootDir);
   }
 
   async init() {
     await ensureDir(this.paths.rootDir);
     await ensureDir(this.paths.eventsDir);
+    await ensureDir(this.paths.cacheDir);
+    await ensureDir(this.paths.tmpDir);
+    await ensureDir(this.paths.exportDir);
     await ensureDir(path.dirname(this.paths.graphPath));
 
     await withGraphStore(this.paths.graphPath, () => undefined);
@@ -56,6 +181,10 @@ export class SherpaEngine {
       insertEvents(db, events);
       insertCases(db, caseRows);
       insertStateEdges(db, stateEdgeRows);
+      setMetadata(db, "defaultOrder", String(this.defaultOrder));
+      setMetadata(db, "minOrder", String(this.minOrder));
+      setMetadata(db, "maxOrder", String(this.maxOrder));
+      setMetadata(db, "minSupport", String(this.minSupport));
       setMetadata(db, "lastRebuildAt", new Date().toISOString());
     });
   }
@@ -70,6 +199,10 @@ export class SherpaEngine {
       };
       const caseRow = db.prepare("SELECT COUNT(*) as count FROM cases").get() as { count: number };
       const stateRow = db.prepare("SELECT COUNT(*) as count FROM state_edges").get() as { count: number };
+      const rebuildRow = db.prepare("SELECT value FROM metadata WHERE key = 'lastRebuildAt'").get() as
+        | { value: string }
+        | undefined;
+      const lastRebuildAt = rebuildRow?.value ?? null;
 
       return {
         backend: "sherpa",
@@ -78,11 +211,63 @@ export class SherpaEngine {
         cases: Number(caseRow.count ?? 0),
         states: Number(stateRow.count ?? 0),
         lastUpdateAt: eventRow.last_ts ?? null,
+        lastRebuildAt,
+        ledgerFreshness: {
+          healthy: eventRow.last_ts !== null,
+          latestEventAt: eventRow.last_ts ?? null,
+          ageMs: ageFromTimestamp(eventRow.last_ts ?? null)
+        },
+        graphFreshness: {
+          healthy: lastRebuildAt !== null,
+          rebuiltAt: lastRebuildAt,
+          ageMs: ageFromTimestamp(lastRebuildAt)
+        },
         advisoryEnabled: false,
+        config: {
+          defaultOrder: this.defaultOrder,
+          minOrder: this.minOrder,
+          maxOrder: this.maxOrder,
+          minSupport: this.minSupport
+        },
         ledgerPath: this.paths.eventsDir,
         graphPath: this.paths.graphPath
       };
     });
+  }
+
+  private readMatchedEdges(db: DatabaseSyncType, state: string[]) {
+    for (let order = Math.min(this.defaultOrder, state.length); order >= this.minOrder; order -= 1) {
+      const currentState = state.slice(-order);
+      const rows = db
+        .prepare(
+          `
+            SELECT next_event, support, success_count, failure_count,
+                   terminal_success_count, terminal_failure_count, terminal_unknown_count,
+                   total_duration_ms
+            FROM state_edges
+            WHERE order_n = ? AND state_key = ?
+            ORDER BY support DESC, next_event ASC
+          `
+        )
+        .all(order, stateKeyFromEvents(currentState)) as StateEdgeRow[];
+
+      if (rows.length > 0) {
+        const totalSupport = rows.reduce((sum, row) => sum + Number(row.support), 0);
+
+        if (totalSupport < this.minSupport) {
+          continue;
+        }
+
+        return {
+          matchedOrder: order,
+          currentState,
+          rows,
+          totalSupport
+        };
+      }
+    }
+
+    return null;
   }
 
   async workflowState(caseId: string, maxOrder = this.defaultOrder): Promise<WorkflowStateResult> {
@@ -100,64 +285,35 @@ export class SherpaEngine {
             LIMIT ?
           `
         )
-        .all(caseId, maxOrder) as Array<{
-        event_id: string;
-        schema_version: number;
-        agent_id: string;
-        case_id: string;
-        ts: string;
-        source: string;
-        type: string;
-        actor: string;
-        outcome: SherpaEvent["outcome"];
-        labels_json: string;
-        entities_json: string;
-        metrics_json: string;
-        meta_json: string;
-      }>;
+        .all(caseId, maxOrder) as StoredEventRow[];
 
-      const ordered = recentEvents
-        .reverse()
-        .map((row) => ({
-          eventId: row.event_id,
-          schemaVersion: row.schema_version as 1,
-          agentId: row.agent_id,
-          caseId: row.case_id,
-          ts: row.ts,
-          source: row.source,
-          type: row.type,
-          actor: row.actor,
-          outcome: row.outcome,
-          labels: JSON.parse(row.labels_json) as string[],
-          entities: JSON.parse(row.entities_json) as string[],
-          metrics: JSON.parse(row.metrics_json) as Record<string, number>,
-          meta: JSON.parse(row.meta_json) as Record<string, unknown>
-        }))
-        .slice(-maxOrder);
+      const ordered = recentEvents.reverse().map(deserializeEvent).slice(-maxOrder);
 
       const state = ordered.map((event) => event.type);
-      const stateKey = stateKeyFromEvents(state);
-      const supportRow = db
-        .prepare(
-          `
-            SELECT COALESCE(SUM(support), 0) as support
-            FROM state_edges
-            WHERE order_n = ? AND state_key = ?
-          `
-        )
-        .get(state.length, stateKey) as { support: number };
-
-      const support = Number(supportRow.support ?? 0);
-      const confidence = support === 0 ? 0 : Number(Math.min(0.99, 0.45 + Math.log10(support + 1) / 3).toFixed(2));
+      const supportQuery = db.prepare(
+        `
+          SELECT COALESCE(SUM(support), 0) as support
+          FROM state_edges
+          WHERE order_n = ? AND state_key = ?
+        `
+      );
       const matchedWorkflow =
         ordered
           .flatMap((event) => event.labels)
           .find((label) => label.startsWith("workflow:")) ?? null;
+      const match = this.readMatchedEdges(db, state);
+      const matchedOrder = match?.matchedOrder ?? state.length;
+      const matchedState = match?.currentState ?? state;
+      const matchedStateKey = stateKeyFromEvents(matchedState);
+      const supportRow = supportQuery.get(matchedState.length, matchedStateKey) as { support: number };
+      const support = Number(supportRow.support ?? 0);
+      const confidence = confidenceFromSupport(support);
 
       return {
         caseId,
-        state,
+        state: matchedState,
         matchedWorkflow,
+        matchedOrder,
         confidence,
         support,
         recentEvents: ordered
@@ -170,49 +326,23 @@ export class SherpaEngine {
     const state = await this.workflowState(caseId, this.defaultOrder);
 
     return withGraphStore(this.paths.graphPath, (db) => {
-      for (let order = Math.min(this.defaultOrder, state.state.length); order >= this.minOrder; order -= 1) {
-        const currentState = state.state.slice(-order);
-        const rows = db
-          .prepare(
-            `
-              SELECT next_event, support, success_count, failure_count
-              FROM state_edges
-              WHERE order_n = ? AND state_key = ?
-              ORDER BY support DESC, next_event ASC
-            `
-          )
-          .all(order, stateKeyFromEvents(currentState)) as Array<{
-          next_event: string;
-          support: number;
-          success_count: number;
-          failure_count: number;
-        }>;
+      const match = this.readMatchedEdges(db, state.state);
 
-        if (rows.length === 0) {
-          continue;
-        }
-
-        const totalSupport = rows.reduce((sum, row) => sum + Number(row.support), 0);
-        const candidates: WorkflowNextCandidate[] = rows.slice(0, limit).map((row) => ({
+      if (match) {
+        const candidates: WorkflowNextCandidate[] = match.rows.slice(0, limit).map((row) => ({
           event: row.next_event,
-          probability: Number((Number(row.support) / totalSupport).toFixed(2)),
+          probability: Number((Number(row.support) / match.totalSupport).toFixed(2)),
           support: Number(row.support),
-          successRate:
-            Number(row.success_count) + Number(row.failure_count) === 0
-              ? null
-              : Number(
-                  (
-                    Number(row.success_count) /
-                    (Number(row.success_count) + Number(row.failure_count))
-                  ).toFixed(2)
-                ),
-          matchedOrder: order,
-          reason: `Matched ${order}-event suffix with ${row.support} prior observations`
+          successRate: eventualSuccessRate(row),
+          meanTimeToNextMs:
+            Number(row.support) === 0 ? null : Number((Number(row.total_duration_ms) / Number(row.support)).toFixed(0)),
+          matchedOrder: match.matchedOrder,
+          reason: `Matched ${match.matchedOrder}-event suffix with ${row.support} prior observations`
         }));
 
         return {
           caseId,
-          state: currentState,
+          state: match.currentState,
           candidates
         };
       }
@@ -225,8 +355,168 @@ export class SherpaEngine {
     });
   }
 
+  async workflowRisks(caseId: string, limit = 3): Promise<WorkflowRisksResult> {
+    await this.init();
+    const state = await this.workflowState(caseId, this.defaultOrder);
+
+    return withGraphStore(this.paths.graphPath, (db) => {
+      const match = this.readMatchedEdges(db, state.state);
+
+      if (!match) {
+        return {
+          caseId,
+          state: state.state,
+          risks: []
+        };
+      }
+
+      const baselineFailureRate =
+        match.rows.reduce((sum, row) => sum + Number(row.terminal_failure_count), 0) / Math.max(1, match.totalSupport);
+      const baselineStallRate =
+        match.rows.reduce((sum, row) => sum + Number(row.terminal_unknown_count), 0) / Math.max(1, match.totalSupport);
+
+      const risks: WorkflowRisk[] = [];
+
+      for (const row of match.rows) {
+        const branchProbability = Number((Number(row.support) / match.totalSupport).toFixed(2));
+        const failureRate = Number(row.terminal_failure_count) / Math.max(1, Number(row.support));
+        const stallRate = Number(row.terminal_unknown_count) / Math.max(1, Number(row.support));
+
+        if (Number(row.terminal_failure_count) > 0 && failureRate > baselineFailureRate) {
+          risks.push({
+            branch: row.next_event,
+            kind: "failure",
+            probability: branchProbability,
+            relativeRisk: relativeRisk(failureRate, baselineFailureRate),
+            support: Number(row.support),
+            matchedOrder: match.matchedOrder,
+            suggestedIntervention: suggestIntervention(row.next_event, "failure")
+          });
+        }
+
+        if (Number(row.terminal_unknown_count) > 0 && stallRate > baselineStallRate) {
+          risks.push({
+            branch: row.next_event,
+            kind: "stall",
+            probability: branchProbability,
+            relativeRisk: relativeRisk(stallRate, baselineStallRate),
+            support: Number(row.support),
+            matchedOrder: match.matchedOrder,
+            suggestedIntervention: suggestIntervention(row.next_event, "stall")
+          });
+        }
+      }
+
+      return {
+        caseId,
+        state: match.currentState,
+        risks: risks
+          .sort((left, right) => {
+            if (right.relativeRisk !== left.relativeRisk) {
+              return right.relativeRisk - left.relativeRisk;
+            }
+
+            if (right.probability !== left.probability) {
+              return right.probability - left.probability;
+            }
+
+            return right.support - left.support;
+          })
+          .slice(0, limit)
+      };
+    });
+  }
+
+  async workflowRecall(caseId: string, mode: WorkflowRecallMode = "successful", limit = 3): Promise<WorkflowRecallResult> {
+    await this.init();
+    const currentState = await this.workflowState(caseId, this.defaultOrder);
+
+    if (currentState.state.length === 0) {
+      return {
+        caseId,
+        state: [],
+        mode,
+        paths: []
+      };
+    }
+
+    return withGraphStore(this.paths.graphPath, (db) => {
+      const candidateCases = db
+        .prepare(
+          `
+            SELECT case_id, terminal_outcome
+            FROM cases
+            WHERE case_id != ?
+            ORDER BY last_seen_at DESC, case_id ASC
+          `
+        )
+        .all(caseId) as Array<{ case_id: string; terminal_outcome: SherpaEvent["outcome"] }>;
+
+      const paths: WorkflowRecallPath[] = [];
+
+      for (const candidate of candidateCases) {
+        if (mode === "successful" && candidate.terminal_outcome !== "success") {
+          continue;
+        }
+
+        if (mode === "failed" && candidate.terminal_outcome !== "failure") {
+          continue;
+        }
+
+        const sequence = db
+          .prepare(
+            `
+              SELECT type
+              FROM events
+              WHERE case_id = ?
+              ORDER BY ts ASC, event_id ASC
+            `
+          )
+          .all(candidate.case_id) as Array<{ type: string }>;
+
+        const match = longestMatchingWindow(
+          currentState.state,
+          sequence.map((row) => row.type),
+          this.defaultOrder
+        );
+
+        if (!match || match.continuation.length === 0) {
+          continue;
+        }
+
+        paths.push({
+          caseId: candidate.case_id,
+          distance: Number((1 - match.matchedOrder / currentState.state.length).toFixed(2)),
+          outcome: candidate.terminal_outcome,
+          matchedOrder: match.matchedOrder,
+          continuation: match.continuation.slice(0, 8)
+        });
+      }
+
+      return {
+        caseId,
+        state: currentState.state,
+        mode,
+        paths: paths
+          .sort((left, right) => {
+            if (right.matchedOrder !== left.matchedOrder) {
+              return right.matchedOrder - left.matchedOrder;
+            }
+
+            if (left.distance !== right.distance) {
+              return left.distance - right.distance;
+            }
+
+            return left.caseId.localeCompare(right.caseId);
+          })
+          .slice(0, limit)
+      };
+    });
+  }
+
   async doctor(): Promise<DoctorResult> {
     await this.init();
+    const status = await this.status();
 
     const checks: DoctorResult["checks"] = [];
 
@@ -257,9 +547,155 @@ export class SherpaEngine {
       });
     }
 
+    checks.push({
+      name: "ledgerFreshness",
+      ok: status.ledgerFreshness.healthy,
+      details:
+        status.ledgerFreshness.latestEventAt === null
+          ? "no ledger events found"
+          : `latest event at ${status.ledgerFreshness.latestEventAt}`
+    });
+
+    checks.push({
+      name: "graphFreshness",
+      ok: status.graphFreshness.healthy,
+      details:
+        status.graphFreshness.rebuiltAt === null
+          ? "graph has not been rebuilt yet"
+          : `last rebuilt at ${status.graphFreshness.rebuiltAt}`
+    });
+
     return {
       healthy: checks.every((check) => check.ok),
       checks
     };
+  }
+
+  async exportSnapshot(): Promise<ExportResult> {
+    await this.init();
+    const exportedAt = new Date().toISOString();
+    const fileName = `${exportedAt.replaceAll(":", "-")}.json`;
+    const exportPath = path.join(this.paths.exportDir, fileName);
+
+    const snapshot = await withGraphStore(this.paths.graphPath, (db) => {
+      const cases = db
+        .prepare(
+          `
+            SELECT case_id, agent_id, event_count, first_seen_at, last_seen_at, terminal_outcome
+            FROM cases
+            ORDER BY last_seen_at DESC, case_id ASC
+          `
+        )
+        .all() as Array<{
+        case_id: string;
+        agent_id: string;
+        event_count: number;
+        first_seen_at: string;
+        last_seen_at: string;
+        terminal_outcome: SherpaEvent["outcome"];
+      }>;
+
+      const stateEdges = db
+        .prepare(
+          `
+            SELECT order_n, state_key, next_event, support, success_count, failure_count,
+                   terminal_success_count, terminal_failure_count, terminal_unknown_count,
+                   total_duration_ms, min_duration_ms, max_duration_ms, last_seen_at
+            FROM state_edges
+            ORDER BY support DESC, order_n DESC, state_key ASC, next_event ASC
+          `
+        )
+        .all();
+
+      return {
+        exportedAt,
+        status: null as unknown,
+        cases,
+        stateEdges
+      };
+    });
+
+    const status = await this.status();
+    snapshot.status = status;
+
+    await fs.writeFile(exportPath, `${JSON.stringify(snapshot, null, 2)}\n`, "utf8");
+
+    return {
+      exportPath,
+      exportedAt,
+      eventCount: status.events,
+      caseCount: status.cases,
+      stateCount: status.states
+    };
+  }
+
+  async gc(): Promise<GcResult> {
+    await this.init();
+
+    const removedTmpFiles = await this.removeAllFiles(this.paths.tmpDir);
+    const removedExportFiles = await this.pruneOldFiles(this.paths.exportDir, 10);
+
+    await withGraphStore(this.paths.graphPath, (db) => {
+      db.exec("VACUUM;");
+    });
+
+    return {
+      vacuumed: true,
+      removedTmpFiles,
+      removedExportFiles
+    };
+  }
+
+  private async removeAllFiles(dirPath: string) {
+    try {
+      const entries = await fs.readdir(dirPath, { withFileTypes: true });
+      let removed = 0;
+
+      for (const entry of entries) {
+        const target = path.join(dirPath, entry.name);
+        await fs.rm(target, { recursive: true, force: true });
+        removed += 1;
+      }
+
+      return removed;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        return 0;
+      }
+
+      throw error;
+    }
+  }
+
+  private async pruneOldFiles(dirPath: string, keepLatest: number) {
+    try {
+      const entries = await fs.readdir(dirPath, { withFileTypes: true });
+      const files = await Promise.all(
+        entries
+          .filter((entry) => entry.isFile())
+          .map(async (entry) => {
+            const target = path.join(dirPath, entry.name);
+            const stat = await fs.stat(target);
+            return {
+              path: target,
+              mtimeMs: stat.mtimeMs
+            };
+          })
+      );
+
+      const stale = files
+        .sort((left, right) => right.mtimeMs - left.mtimeMs)
+        .slice(keepLatest);
+
+      await Promise.all(stale.map((file) => fs.rm(file.path, { force: true })));
+
+      return stale.length;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        return 0;
+      }
+
+      throw error;
+    }
   }
 }

@@ -21,18 +21,21 @@ export const SherpaEventSchema = z.object({
 export type SherpaEvent = z.infer<typeof SherpaEventSchema>;
 export type SherpaEventInput = z.input<typeof SherpaEventSchema>;
 export type SherpaOutcome = z.infer<typeof OutcomeSchema>;
+export type WorkflowRecallMode = "successful" | "failed" | "any";
 
 export interface SherpaEngineOptions {
   rootDir: string;
   defaultOrder?: number;
   minOrder?: number;
   maxOrder?: number;
+  minSupport?: number;
 }
 
 export interface WorkflowStateResult {
   caseId: string;
   state: string[];
   matchedWorkflow: string | null;
+  matchedOrder: number;
   confidence: number;
   support: number;
   recentEvents: SherpaEvent[];
@@ -43,6 +46,7 @@ export interface WorkflowNextCandidate {
   probability: number;
   support: number;
   successRate: number | null;
+  meanTimeToNextMs: number | null;
   matchedOrder: number;
   reason: string;
 }
@@ -53,6 +57,37 @@ export interface WorkflowNextResult {
   candidates: WorkflowNextCandidate[];
 }
 
+export interface WorkflowRisk {
+  branch: string;
+  kind: "stall" | "failure";
+  probability: number;
+  relativeRisk: number;
+  support: number;
+  matchedOrder: number;
+  suggestedIntervention: string;
+}
+
+export interface WorkflowRisksResult {
+  caseId: string;
+  state: string[];
+  risks: WorkflowRisk[];
+}
+
+export interface WorkflowRecallPath {
+  caseId: string;
+  distance: number;
+  outcome: SherpaOutcome;
+  matchedOrder: number;
+  continuation: string[];
+}
+
+export interface WorkflowRecallResult {
+  caseId: string;
+  state: string[];
+  mode: WorkflowRecallMode;
+  paths: WorkflowRecallPath[];
+}
+
 export interface WorkflowStatusResult {
   backend: "sherpa";
   healthy: boolean;
@@ -60,9 +95,40 @@ export interface WorkflowStatusResult {
   cases: number;
   states: number;
   lastUpdateAt: string | null;
+  lastRebuildAt: string | null;
+  ledgerFreshness: {
+    healthy: boolean;
+    latestEventAt: string | null;
+    ageMs: number | null;
+  };
+  graphFreshness: {
+    healthy: boolean;
+    rebuiltAt: string | null;
+    ageMs: number | null;
+  };
   advisoryEnabled: boolean;
+  config: {
+    defaultOrder: number;
+    minOrder: number;
+    maxOrder: number;
+    minSupport: number;
+  };
   ledgerPath: string;
   graphPath: string;
+}
+
+export interface ExportResult {
+  exportPath: string;
+  exportedAt: string;
+  eventCount: number;
+  caseCount: number;
+  stateCount: number;
+}
+
+export interface GcResult {
+  vacuumed: boolean;
+  removedTmpFiles: number;
+  removedExportFiles: number;
 }
 
 export interface DoctorResult {

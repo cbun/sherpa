@@ -38,6 +38,8 @@ tmp/
 
 # Runtime state
 *.pid
+.beads/
+.sherpa/
 
 # OpenClaw-style local data
 .openclaw/

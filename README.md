@@ -9,9 +9,9 @@ At a technical level, Sherpa is a de Bruijn-style higher-order workflow memory: 
 Sherpa now has an alpha implementation:
 
 - `@sherpa/core`: append-only ledger, derived SQLite graph, and retrieval primitives
-- `sherpa`: CLI for ingest, rebuild, status, doctor, workflow state, and workflow next
+- `sherpa`: CLI for ingest, rebuild, status, workflow-status, doctor, export, gc, workflow state, workflow next, workflow risks, and workflow recall
 
-The product requirements document remains the product source of truth at [`sherpa-prd.md`](./sherpa-prd.md).
+The product requirements document remains the product source of truth at [`prd/sherpa-prd.md`](./prd/sherpa-prd.md).
 
 ## Current Packages
 
@@ -68,15 +68,21 @@ Then ingest and query it:
 ```bash
 node packages/cli/dist/index.js --root ./.sherpa ingest event.json
 node packages/cli/dist/index.js --root ./.sherpa status
+node packages/cli/dist/index.js --root ./.sherpa workflow-status
+node packages/cli/dist/index.js --root ./.sherpa export
+node packages/cli/dist/index.js --root ./.sherpa gc
 node packages/cli/dist/index.js --root ./.sherpa workflow-state --case-id case-123
 node packages/cli/dist/index.js --root ./.sherpa workflow-next --case-id case-123
+node packages/cli/dist/index.js --root ./.sherpa workflow-risks --case-id case-123
+node packages/cli/dist/index.js --root ./.sherpa workflow-recall --case-id case-123 --mode successful
 ```
 
 ## Notes
 
 - The current storage backend uses Node 22's built-in `node:sqlite`, which still emits an experimental warning.
 - The current implementation rebuilds the derived graph from the ledger on each ingest. That keeps the source of truth simple now; incremental updates can come later.
-- The current engine uses fixed-order state lookup with fallback through shorter suffixes still to come; the long-term design should support variable-order backoff and mixture-style retrieval when data is sparse.
+- The engine now supports minimum-support variable-order backoff, richer status/freshness reporting, JSON snapshot export, and graph maintenance via `gc`.
+- Risk and recall are still alpha-grade heuristics built from eventual case outcomes and suffix matching; they are useful now, but not yet the final retrieval model described in the PRD.
 
 ## Research Direction
 
@@ -115,8 +121,8 @@ That leads to a few practical implementation rules:
 ## Next Steps
 
 - Add the OpenClaw plugin package for event capture and native tool registration
-- Expand retrieval beyond `workflow-state` and `workflow-next`
-- Add variable-order backoff, richer edge statistics, and path recall primitives
+- Add MCP and SDK surfaces for the standalone core
+- Improve recall/risk scoring beyond the current heuristic layer
 - Define a validation harness using synthetic workflow traces and real event-log datasets
 - Add CI under `.github/workflows/`
 - Add release/versioning automation once package boundaries settle

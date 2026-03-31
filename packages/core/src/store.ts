@@ -45,7 +45,8 @@ export async function withGraphStore<T>(graphPath: string, handler: (db: Databas
         agent_id TEXT NOT NULL,
         event_count INTEGER NOT NULL,
         first_seen_at TEXT NOT NULL,
-        last_seen_at TEXT NOT NULL
+        last_seen_at TEXT NOT NULL,
+        terminal_outcome TEXT NOT NULL
       );
 
       CREATE TABLE IF NOT EXISTS state_edges (
@@ -55,6 +56,12 @@ export async function withGraphStore<T>(graphPath: string, handler: (db: Databas
         support INTEGER NOT NULL,
         success_count INTEGER NOT NULL,
         failure_count INTEGER NOT NULL,
+        terminal_success_count INTEGER NOT NULL,
+        terminal_failure_count INTEGER NOT NULL,
+        terminal_unknown_count INTEGER NOT NULL,
+        total_duration_ms INTEGER NOT NULL,
+        min_duration_ms INTEGER,
+        max_duration_ms INTEGER,
         last_seen_at TEXT NOT NULL,
         PRIMARY KEY (order_n, state_key, next_event)
       );
@@ -114,15 +121,16 @@ export function insertCases(
     eventCount: number;
     firstSeenAt: string;
     lastSeenAt: string;
+    terminalOutcome: SherpaEvent["outcome"];
   }>
 ) {
   const statement = db.prepare(`
-    INSERT INTO cases (case_id, agent_id, event_count, first_seen_at, last_seen_at)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO cases (case_id, agent_id, event_count, first_seen_at, last_seen_at, terminal_outcome)
+    VALUES (?, ?, ?, ?, ?, ?)
   `);
 
   for (const row of rows) {
-    statement.run(row.caseId, row.agentId, row.eventCount, row.firstSeenAt, row.lastSeenAt);
+    statement.run(row.caseId, row.agentId, row.eventCount, row.firstSeenAt, row.lastSeenAt, row.terminalOutcome);
   }
 }
 
@@ -135,13 +143,21 @@ export function insertStateEdges(
     support: number;
     successCount: number;
     failureCount: number;
+    terminalSuccessCount: number;
+    terminalFailureCount: number;
+    terminalUnknownCount: number;
+    totalDurationMs: number;
+    minDurationMs: number | null;
+    maxDurationMs: number | null;
     lastSeenAt: string;
   }>
 ) {
   const statement = db.prepare(`
     INSERT INTO state_edges (
-      order_n, state_key, next_event, support, success_count, failure_count, last_seen_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      order_n, state_key, next_event, support, success_count, failure_count,
+      terminal_success_count, terminal_failure_count, terminal_unknown_count,
+      total_duration_ms, min_duration_ms, max_duration_ms, last_seen_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   for (const row of rows) {
@@ -152,6 +168,12 @@ export function insertStateEdges(
       row.support,
       row.successCount,
       row.failureCount,
+      row.terminalSuccessCount,
+      row.terminalFailureCount,
+      row.terminalUnknownCount,
+      row.totalDurationMs,
+      row.minDurationMs,
+      row.maxDurationMs,
       row.lastSeenAt
     );
   }

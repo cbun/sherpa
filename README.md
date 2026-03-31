@@ -6,6 +6,26 @@ It watches the events an OpenClaw agent already produces — sessions starting, 
 
 After enough observations, Sherpa can tell the agent what usually comes next, which branches tend to fail, and how similar past tasks resolved. It does this without any remote service, extra LLM calls, or changes to how you use OpenClaw.
 
+## Abstract
+
+Contemporary LLM-based agent systems maintain two dominant forms of memory: **semantic memory** (embedding-based retrieval over stored facts and documents) and **episodic memory** (raw or summarized conversation history). Both degrade under the operational conditions that characterize long-running agentic workflows — context window saturation, lossy compaction, session discontinuity, and cross-session state leakage. Critically, neither representation captures the **procedural regularities** that emerge when an agent repeatedly executes structurally similar tasks: the typical ordering of steps, the branching points where failures concentrate, or the temporal dynamics of successful versus unsuccessful trajectories.
+
+Sherpa addresses this gap by introducing a **procedural memory layer** that models agent workflow structure as a **variable-order Markov chain** over typed event sequences. Events are captured from the agent's native lifecycle (session boundaries, tool invocations, task demarcations, message dispatch) and stored in an append-only local ledger. A derived **n-gram transition graph** — conceptually related to de Bruijn graphs in sequence analysis — encodes multi-order state transitions with per-edge provenance: observation support, transition-level and terminal-case outcome distributions, and temporal statistics.
+
+The principal contributions are:
+
+1. **A formal separation of procedural memory from semantic and episodic memory** in agent architectures, with a concrete implementation that operates over typed event traces rather than natural language embeddings or token-level attention.
+
+2. **Variable-order suffix matching with graceful degradation.** State resolution attempts the highest-order context match first and falls back to shorter suffixes when support is insufficient, analogous to variable-order Markov models (VOMMs) and Prediction by Partial Matching (PPM) in data compression. This yields high-specificity predictions when data is abundant and bounded-quality predictions when it is not, without requiring explicit order selection.
+
+3. **Outcome-aware transition scoring.** Branch ranking incorporates not only transition probability but also terminal case outcomes (eventual success/failure rates for cases that passed through each edge), yielding a composite score that balances frequency, quality, and confidence. Risk detection uses relative risk ratios against per-state baselines to surface branches with elevated failure or stall rates.
+
+4. **Zero-inference advisory injection.** Procedural guidance is generated deterministically from graph statistics and injected into the agent's prompt context without additional LLM calls, preserving the latency and cost profile of the underlying agent system.
+
+5. **Local-first, ledger-grounded design.** All state is reconstructable from the append-only event ledger. The derived graph is a materialized view that can be rebuilt at any time, making the system resilient to corruption and portable across environments. No data leaves the host machine.
+
+Sherpa draws on ideas from process mining (event logs as first-class analytical objects), higher-order Markov models (multi-step context dependence), de Bruijn graph construction (suffix-overlap structure), and sequential pattern mining (support-based transition significance). It is, to our knowledge, the first system to apply variable-order Markov modeling specifically to LLM agent tool-use and task-execution traces for the purpose of real-time procedural guidance.
+
 ## Why This Exists
 
 Agent sessions have a specific memory problem that RAG and conversation history don't solve well.

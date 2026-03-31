@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
 
-import { appendEvent, ensureDir, readLedger } from "./ledger.js";
+import { appendEvent, appendEvents, ensureDir, readLedger } from "./ledger.js";
 import { buildDerivedRows, stateKeyFromEvents } from "./graph.js";
 import { resolveSherpaPaths } from "./paths.js";
 import { insertCases, insertEvents, insertStateEdges, resetDerivedTables, setMetadata, withGraphStore } from "./store.js";
@@ -169,6 +169,17 @@ export class SherpaEngine {
     const event = await appendEvent(this.paths.eventsDir, eventInput);
     await this.rebuild();
     return event;
+  }
+
+  async ingestBatch(eventInputs: SherpaEventInput[]): Promise<SherpaEvent[]> {
+    if (eventInputs.length === 0) {
+      return [];
+    }
+
+    await this.init();
+    const events = await appendEvents(this.paths.eventsDir, eventInputs);
+    await this.rebuild();
+    return events;
   }
 
   async rebuild() {

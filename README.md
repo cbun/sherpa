@@ -8,8 +8,9 @@ At a technical level, Sherpa is a de Bruijn-style higher-order workflow memory: 
 
 Sherpa now has an alpha implementation:
 
-- `@sherpa/core`: append-only ledger, derived SQLite graph, and retrieval primitives
+- `@sherpa/core`: append-only ledger, batched ingest, derived SQLite graph, and retrieval primitives
 - `sherpa`: CLI for ingest, rebuild, status, workflow-status, doctor, export, gc, workflow state, workflow next, workflow risks, and workflow recall
+- `@sherpa/openclaw`: native OpenClaw plugin package with manifest, config schema, lifecycle event capture, and native tool registration over the core engine
 
 The product requirements document remains the product source of truth at [`prd/sherpa-prd.md`](./prd/sherpa-prd.md).
 
@@ -17,6 +18,7 @@ The product requirements document remains the product source of truth at [`prd/s
 
 - `packages/core`: core engine and types
 - `packages/cli`: publishable CLI package
+- `packages/openclaw`: OpenClaw plugin adapter
 
 ## Theory
 
@@ -80,9 +82,11 @@ node packages/cli/dist/index.js --root ./.sherpa workflow-recall --case-id case-
 ## Notes
 
 - The current storage backend uses Node 22's built-in `node:sqlite`, which still emits an experimental warning.
-- The current implementation rebuilds the derived graph from the ledger on each ingest. That keeps the source of truth simple now; incremental updates can come later.
+- The current implementation rebuilds the derived graph from the ledger on each ingest or ingest batch. That keeps the source of truth simple now; incremental updates can come later.
 - The engine now supports minimum-support variable-order backoff, richer status/freshness reporting, JSON snapshot export, and graph maintenance via `gc`.
 - Risk and recall are still alpha-grade heuristics built from eventual case outcomes and suffix matching; they are useful now, but not yet the final retrieval model described in the PRD.
+- The OpenClaw package now captures session lifecycle, inbound dispatch, and tool lifecycle events with redacted-by-default metadata, debounced per-store batching, and periodic maintenance over known Sherpa stores.
+- Richer case-splitting rules, scope controls, and advisory injection are still to come.
 
 ## Research Direction
 
@@ -120,7 +124,8 @@ That leads to a few practical implementation rules:
 
 ## Next Steps
 
-- Add the OpenClaw plugin package for event capture and native tool registration
+- Add OpenClaw richer case-splitting and scope controls
+- Add advisory injection and scoped activation rules in the plugin layer
 - Add MCP and SDK surfaces for the standalone core
 - Improve recall/risk scoring beyond the current heuristic layer
 - Define a validation harness using synthetic workflow traces and real event-log datasets

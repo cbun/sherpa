@@ -1,0 +1,40 @@
+{
+  "name": "@sherpa/openclaw",
+  "version": "0.1.0",
+  "description": "OpenClaw plugin for Sherpa procedural memory",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "openclaw.plugin.json"
+  ],
+  "openclaw": {
+    "extensions": [
+      "./dist/index.js"
+    ],
+    "compat": {
+      "pluginApi": ">=2026.3.24-beta.2",
+      "minGatewayVersion": "2026.3.24-beta.2"
+    },
+    "build": {
+      "openclawVersion": "2026.3.28",
+      "pluginSdkVersion": "2026.3.28"
+    }
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --project tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@sherpa/core": "workspace:*",
+    "@sinclair/typebox": "^0.34.49",
+    "openclaw": "^2026.3.28"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

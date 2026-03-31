@@ -19,6 +19,30 @@ export async function appendEvent(eventsDir: string, eventInput: SherpaEventInpu
   return event;
 }
 
+export async function appendEvents(eventsDir: string, eventInputs: SherpaEventInput[]): Promise<SherpaEvent[]> {
+  if (eventInputs.length === 0) {
+    return [];
+  }
+
+  await ensureDir(eventsDir);
+
+  const events = eventInputs.map((eventInput) => SherpaEventSchema.parse(eventInput));
+  const shardLines = new Map<string, string[]>();
+
+  for (const event of events) {
+    const dateShard = `${event.ts.slice(0, 10)}.jsonl`;
+    const lines = shardLines.get(dateShard) ?? [];
+    lines.push(`${JSON.stringify(event)}\n`);
+    shardLines.set(dateShard, lines);
+  }
+
+  await Promise.all(
+    [...shardLines.entries()].map(([dateShard, lines]) => fs.appendFile(path.join(eventsDir, dateShard), lines.join(""), "utf8"))
+  );
+
+  return events;
+}
+
 export async function readLedger(eventsDir: string): Promise<SherpaEvent[]> {
   try {
     const entries = await fs.readdir(eventsDir, { withFileTypes: true });

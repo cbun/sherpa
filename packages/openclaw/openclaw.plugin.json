@@ -1,0 +1,129 @@
+{
+  "id": "sherpa",
+  "name": "Sherpa",
+  "description": "Procedural workflow memory for OpenClaw",
+  "version": "0.1.0",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "store": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "root": {
+            "type": "string",
+            "default": "~/.openclaw/agents/{agentId}/sherpa"
+          }
+        }
+      },
+      "ledger": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "redactRawText": { "type": "boolean", "default": true },
+          "maxMetaBytes": { "type": "integer", "minimum": 64, "default": 2048 }
+        }
+      },
+      "order": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "default": { "type": "integer", "minimum": 1, "default": 3 },
+          "min": { "type": "integer", "minimum": 1, "default": 1 },
+          "max": { "type": "integer", "minimum": 1, "default": 5 },
+          "backoff": { "type": "boolean", "default": true },
+          "minSupport": { "type": "integer", "minimum": 1, "default": 1 }
+        }
+      },
+      "advisory": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "enabled": { "type": "boolean", "default": false },
+          "injectThreshold": { "type": "number", "minimum": 0, "maximum": 1, "default": 0.75 },
+          "maxCandidates": { "type": "integer", "minimum": 1, "default": 3 },
+          "maxRisks": { "type": "integer", "minimum": 1, "default": 2 },
+          "maxChars": { "type": "integer", "minimum": 1, "default": 900 }
+        }
+      },
+      "update": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "onBoot": { "type": "boolean", "default": true },
+          "interval": { "type": "string", "default": "5m" },
+          "debounceMs": { "type": "integer", "minimum": 0, "default": 10000 },
+          "commandTimeoutMs": { "type": "integer", "minimum": 1, "default": 3000 },
+          "rebuildOnVersionChange": { "type": "boolean", "default": false }
+        }
+      },
+      "capture": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "messages": { "type": "boolean", "default": true },
+          "tools": { "type": "boolean", "default": true },
+          "browser": { "type": "boolean", "default": true },
+          "web": { "type": "boolean", "default": true },
+          "automation": { "type": "boolean", "default": true },
+          "memoryWrites": { "type": "boolean", "default": false }
+        }
+      }
+    }
+  },
+  "uiHints": {
+    "store.root": {
+      "label": "Store Root",
+      "placeholder": "~/.openclaw/agents/{agentId}/sherpa"
+    },
+    "ledger.redactRawText": {
+      "label": "Redact Raw Text"
+    },
+    "ledger.maxMetaBytes": {
+      "label": "Max Meta Bytes"
+    },
+    "order.default": {
+      "label": "Default Order"
+    },
+    "order.min": {
+      "label": "Minimum Order"
+    },
+    "order.max": {
+      "label": "Maximum Order"
+    },
+    "order.minSupport": {
+      "label": "Minimum Support"
+    },
+    "advisory.enabled": {
+      "label": "Enable Advisories"
+    },
+    "advisory.injectThreshold": {
+      "label": "Advisory Threshold"
+    },
+    "update.onBoot": {
+      "label": "Initialize On Boot"
+    },
+    "update.interval": {
+      "label": "Maintenance Interval"
+    },
+    "update.debounceMs": {
+      "label": "Capture Debounce"
+    },
+    "capture.messages": {
+      "label": "Capture Messages"
+    },
+    "capture.tools": {
+      "label": "Capture Tools"
+    },
+    "capture.browser": {
+      "label": "Capture Browser"
+    },
+    "capture.web": {
+      "label": "Capture Web"
+    },
+    "capture.automation": {
+      "label": "Capture Automation"
+    }
+  }
+}

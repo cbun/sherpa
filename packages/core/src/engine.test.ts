@@ -320,6 +320,42 @@ describe("SherpaEngine", () => {
     });
   });
 
+  it("ingests event batches with a single rebuild path", async () => {
+    const engine = await createEngine();
+
+    const events = await engine.ingestBatch([
+      {
+        caseId: "case-batch",
+        ts: "2026-03-30T14:00:00.000Z",
+        source: "openclaw.session",
+        type: "session.started",
+        outcome: "unknown"
+      },
+      {
+        caseId: "case-batch",
+        ts: "2026-03-30T14:01:00.000Z",
+        source: "openclaw.tool",
+        type: "tool.started",
+        outcome: "unknown"
+      },
+      {
+        caseId: "case-batch",
+        ts: "2026-03-30T14:02:00.000Z",
+        source: "openclaw.tool",
+        type: "tool.succeeded",
+        outcome: "success"
+      }
+    ]);
+
+    expect(events).toHaveLength(3);
+
+    const status = await engine.status();
+    expect(status.events).toBe(3);
+
+    const state = await engine.workflowState("case-batch");
+    expect(state.state).toEqual(["session.started", "tool.started", "tool.succeeded"]);
+  });
+
   it("exports a snapshot and performs gc maintenance", async () => {
     const engine = await createEngine();
 

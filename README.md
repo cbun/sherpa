@@ -43,14 +43,39 @@ It is trying to be useful, local, and explainable.
 
 ```mermaid
 flowchart LR
-  A["You use OpenClaw"] --> B["Sherpa captures workflow events"]
-  B --> C["Events go into a local ledger"]
-  C --> D["Sherpa builds a workflow graph"]
-  D --> E["OpenClaw can ask:
-  what state am I in?
-  what usually comes next?
-  where are the risks?
-  what similar paths worked before?"]
+  subgraph OC["OpenClaw"]
+    A["Session and messages"]
+    B["Tool calls and results"]
+    C["Task boundaries and outcomes"]
+  end
+
+  subgraph PL["Sherpa plugin"]
+    D["Scope rules and redaction"]
+    E["Case routing"]
+    F["Typed event normalization"]
+  end
+
+  subgraph ST["Local Sherpa store"]
+    G["Append-only event ledger"]
+    H["Derived workflow graph"]
+  end
+
+  subgraph RT["Runtime queries"]
+    I["workflow_state"]
+    J["workflow_next"]
+    K["workflow_risks"]
+    L["workflow_recall"]
+  end
+
+  A --> D
+  B --> D
+  C --> D
+  D --> E --> F --> G
+  G --> H
+  H --> I
+  H --> J
+  H --> K
+  H --> L
 ```
 
 Sherpa is local-first.
@@ -242,12 +267,27 @@ If you want Sherpa to remember less, tighten scope rules first.
 
 ```mermaid
 flowchart TD
-  A["OpenClaw session"] --> B["Sherpa captures events"]
-  B --> C["Local event ledger"]
-  C --> D["Workflow graph"]
-  D --> E["Next step suggestions"]
-  D --> F["Risk warnings"]
-  D --> G["Recall of similar successful paths"]
+  A["Recent typed event suffix
+  inspect -> patch -> test"] --> B["Current workflow state"]
+
+  B --> C["Observed continuation:
+  complete
+  support: high
+  success rate: high"]
+
+  B --> D["Observed continuation:
+  env-check
+  support: medium
+  stall rate: elevated"]
+
+  B --> E["Observed continuation:
+  rewrite
+  support: low
+  failure rate: elevated"]
+
+  C --> F["Sherpa can rank likely next steps"]
+  D --> G["Sherpa can warn about risky branches"]
+  E --> H["Sherpa can recall similar bad endings"]
 ```
 
 ## Mechanism and Theory

@@ -1,10 +1,19 @@
 import fs from "node:fs/promises";
+import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
 import { SherpaEngine } from "./engine.js";
+
+const require = createRequire(import.meta.url);
+const { DatabaseSync } = require("node:sqlite") as {
+  DatabaseSync: new (path: string) => {
+    exec(sql: string): void;
+    close(): void;
+  };
+};
 
 const tempDirs: string[] = [];
 
@@ -518,6 +527,176 @@ describe("SherpaEngine", () => {
       rareTypeCount: 1,
       rareEventShare: 0.111,
       score: 0.333
+    });
+  });
+
+  it("reports cross-case workflow analytics", async () => {
+    const engine = await createEngine();
+
+    await engine.ingestBatch([
+      {
+        caseId: "case-analytics-1",
+        ts: "2026-03-01T10:00:00.000Z",
+        source: "openclaw.session",
+        type: "session.started",
+        outcome: "unknown"
+      },
+      {
+        caseId: "case-analytics-1",
+        ts: "2026-03-01T10:01:00.000Z",
+        source: "tool.repo",
+        type: "repo.inspected",
+        outcome: "success"
+      },
+      {
+        caseId: "case-analytics-1",
+        ts: "2026-03-01T10:02:00.000Z",
+        source: "tool.edit",
+        type: "patch.applied",
+        outcome: "success"
+      },
+      {
+        caseId: "case-analytics-2",
+        ts: "2026-03-02T10:00:00.000Z",
+        source: "openclaw.session",
+        type: "session.started",
+        outcome: "unknown"
+      },
+      {
+        caseId: "case-analytics-2",
+        ts: "2026-03-02T10:01:00.000Z",
+        source: "tool.repo",
+        type: "repo.inspected",
+        outcome: "success"
+      },
+      {
+        caseId: "case-analytics-2",
+        ts: "2026-03-02T10:02:00.000Z",
+        source: "tool.env",
+        type: "env.blocked",
+        outcome: "failure"
+      },
+      {
+        caseId: "case-analytics-3",
+        ts: "2026-03-03T10:00:00.000Z",
+        source: "openclaw.session",
+        type: "session.started",
+        outcome: "unknown"
+      },
+      {
+        caseId: "case-analytics-3",
+        ts: "2026-03-03T10:01:00.000Z",
+        source: "tool.repo",
+        type: "repo.inspected",
+        outcome: "success"
+      },
+      {
+        caseId: "case-analytics-3",
+        ts: "2026-03-03T10:02:00.000Z",
+        source: "tool.wait",
+        type: "waiting.on.customer",
+        outcome: "unknown"
+      },
+      {
+        caseId: "case-analytics-3",
+        ts: "2026-03-03T10:03:00.000Z",
+        source: "openclaw.task",
+        type: "task.ended",
+        outcome: "unknown"
+      }
+    ]);
+
+    const report = await engine.analyticsReport({
+      asOf: "2026-03-31T00:00:00.000Z",
+      limit: 3
+    });
+
+    expect(report.cases).toMatchObject({
+      total: 3,
+      success: 1,
+      failure: 1,
+      unknown: 1,
+      successRate: 0.333,
+      failureRate: 0.333
+    });
+    expect(report.hotTransitions[0]).toMatchObject({
+      state: ["session.started"],
+      nextEvent: "repo.inspected",
+      support: 3
+    });
+    expect(report.failureBranches).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          nextEvent: "env.blocked",
+          failureRate: 1
+        })
+      ])
+    );
+    expect(report.stallBranches).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          nextEvent: "task.ended",
+          stallRate: 1
+        })
+      ])
+    );
+  });
+
+  it("migrates older graph schemas before analytics queries", async () => {
+    const engine = await createEngine();
+
+    await fs.mkdir(path.dirname(engine.paths.graphPath), { recursive: true });
+    const db = new DatabaseSync(engine.paths.graphPath);
+
+    try {
+      db.exec(`
+        CREATE TABLE events (
+          event_id TEXT PRIMARY KEY,
+          schema_version INTEGER NOT NULL,
+          agent_id TEXT NOT NULL,
+          case_id TEXT NOT NULL,
+          ts TEXT NOT NULL,
+          source TEXT NOT NULL,
+          type TEXT NOT NULL
+        );
+
+        CREATE TABLE cases (
+          case_id TEXT PRIMARY KEY
+        );
+
+        CREATE TABLE state_edges (
+          order_n INTEGER NOT NULL,
+          state_key TEXT NOT NULL,
+          next_event TEXT NOT NULL,
+          support INTEGER NOT NULL,
+          PRIMARY KEY (order_n, state_key, next_event)
+        );
+
+        CREATE TABLE metadata (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL
+        );
+
+        INSERT INTO cases (case_id) VALUES ('legacy-case');
+        INSERT INTO state_edges (order_n, state_key, next_event, support)
+        VALUES (1, 'session.started', 'repo.inspected', 2);
+      `);
+    } finally {
+      db.close();
+    }
+
+    const report = await engine.analyticsReport({ limit: 5 });
+
+    expect(report.cases).toMatchObject({
+      total: 1,
+      success: 0,
+      failure: 0,
+      unknown: 1
+    });
+    expect(report.hotTransitions[0]).toMatchObject({
+      state: ["session.started"],
+      nextEvent: "repo.inspected",
+      support: 2
     });
   });
 

@@ -14,6 +14,44 @@ function json(value: unknown) {
   return JSON.stringify(value ?? {});
 }
 
+function hasColumn(db: DatabaseSyncType, table: string, column: string) {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  return columns.some((entry) => entry.name === column);
+}
+
+function ensureColumn(db: DatabaseSyncType, table: string, column: string, definition: string) {
+  if (hasColumn(db, table, column)) {
+    return;
+  }
+
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+}
+
+function migrateGraphSchema(db: DatabaseSyncType) {
+  ensureColumn(db, "events", "actor", "TEXT NOT NULL DEFAULT 'agent'");
+  ensureColumn(db, "events", "outcome", "TEXT NOT NULL DEFAULT 'unknown'");
+  ensureColumn(db, "events", "labels_json", "TEXT NOT NULL DEFAULT '[]'");
+  ensureColumn(db, "events", "entities_json", "TEXT NOT NULL DEFAULT '[]'");
+  ensureColumn(db, "events", "metrics_json", "TEXT NOT NULL DEFAULT '{}'");
+  ensureColumn(db, "events", "meta_json", "TEXT NOT NULL DEFAULT '{}'");
+
+  ensureColumn(db, "cases", "agent_id", "TEXT NOT NULL DEFAULT 'main'");
+  ensureColumn(db, "cases", "event_count", "INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(db, "cases", "first_seen_at", "TEXT NOT NULL DEFAULT '1970-01-01T00:00:00.000Z'");
+  ensureColumn(db, "cases", "last_seen_at", "TEXT NOT NULL DEFAULT '1970-01-01T00:00:00.000Z'");
+  ensureColumn(db, "cases", "terminal_outcome", "TEXT NOT NULL DEFAULT 'unknown'");
+
+  ensureColumn(db, "state_edges", "success_count", "INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(db, "state_edges", "failure_count", "INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(db, "state_edges", "terminal_success_count", "INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(db, "state_edges", "terminal_failure_count", "INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(db, "state_edges", "terminal_unknown_count", "INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(db, "state_edges", "total_duration_ms", "INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(db, "state_edges", "min_duration_ms", "INTEGER");
+  ensureColumn(db, "state_edges", "max_duration_ms", "INTEGER");
+  ensureColumn(db, "state_edges", "last_seen_at", "TEXT NOT NULL DEFAULT '1970-01-01T00:00:00.000Z'");
+}
+
 export async function withGraphStore<T>(graphPath: string, handler: (db: DatabaseSyncType) => T): Promise<T> {
   await ensureDir(path.dirname(graphPath));
   await fs.mkdir(path.dirname(graphPath), { recursive: true });
@@ -71,6 +109,8 @@ export async function withGraphStore<T>(graphPath: string, handler: (db: Databas
         value TEXT NOT NULL
       );
     `);
+
+    migrateGraphSchema(db);
 
     return handler(db);
   } finally {

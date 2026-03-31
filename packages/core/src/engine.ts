@@ -7,6 +7,9 @@ import { buildDerivedRows, stateKeyFromEvents } from "./graph.js";
 import { resolveSherpaPaths } from "./paths.js";
 import { insertCases, insertEvents, insertStateEdges, resetDerivedTables, setMetadata, withGraphStore } from "./store.js";
 import {
+  type AnalyticsReportOptions,
+  type AnalyticsReportResult,
+  type AnalyticsTransition,
   type DoctorResult,
   type ExportResult,
   type GcResult,
@@ -62,6 +65,18 @@ type TaxonomyRow = {
   last_seen_at: string;
   baseline_count: number;
   recent_count: number;
+};
+
+type AnalyticsEdgeRow = {
+  order_n: number;
+  state_key: string;
+  next_event: string;
+  support: number;
+  terminal_success_count: number;
+  terminal_failure_count: number;
+  terminal_unknown_count: number;
+  total_duration_ms: number;
+  last_seen_at: string;
 };
 
 function deserializeEvent(row: StoredEventRow): SherpaEvent {
@@ -247,6 +262,25 @@ function summarizeTaxonomyRow(
     recentShare: nullableRatio(recentCount, totals.recentEvents),
     isNewInRecentWindow: recentCount > 0 && baselineCount === 0,
     isRare: count <= rareSupport
+  };
+}
+
+function summarizeAnalyticsEdge(row: AnalyticsEdgeRow): AnalyticsTransition {
+  const support = Number(row.support);
+  const knownOutcomes = Number(row.terminal_success_count) + Number(row.terminal_failure_count);
+
+  return {
+    order: Number(row.order_n),
+    state: row.state_key.split(" -> "),
+    nextEvent: row.next_event,
+    support,
+    successRate:
+      knownOutcomes === 0 ? null : Number((Number(row.terminal_success_count) / knownOutcomes).toFixed(3)),
+    failureRate:
+      knownOutcomes === 0 ? null : Number((Number(row.terminal_failure_count) / knownOutcomes).toFixed(3)),
+    stallRate: Number((Number(row.terminal_unknown_count) / Math.max(1, support)).toFixed(3)),
+    meanTimeToNextMs: support === 0 ? null : Number((Number(row.total_duration_ms) / support).toFixed(0)),
+    lastSeenAt: row.last_seen_at
   };
 }
 
@@ -463,6 +497,103 @@ export class SherpaEngine {
           ),
           score: Number((driftScore / 2).toFixed(3))
         }
+      };
+    });
+  }
+
+  async analyticsReport(options: AnalyticsReportOptions = {}): Promise<AnalyticsReportResult> {
+    await this.init();
+
+    const limit = options.limit ?? 10;
+    const generatedAt = options.asOf ?? new Date().toISOString();
+
+    return withGraphStore(this.paths.graphPath, (db) => {
+      const caseRows = db
+        .prepare(
+          `
+            SELECT terminal_outcome, COUNT(*) as count
+            FROM cases
+            GROUP BY terminal_outcome
+          `
+        )
+        .all() as Array<{ terminal_outcome: SherpaEvent["outcome"]; count: number }>;
+
+      const totalCases = caseRows.reduce((sum, row) => sum + Number(row.count), 0);
+      const successCases = Number(caseRows.find((row) => row.terminal_outcome === "success")?.count ?? 0);
+      const failureCases = Number(caseRows.find((row) => row.terminal_outcome === "failure")?.count ?? 0);
+      const unknownCases = Number(caseRows.find((row) => row.terminal_outcome === "unknown")?.count ?? 0);
+
+      const edges = db
+        .prepare(
+          `
+            SELECT
+              order_n,
+              state_key,
+              next_event,
+              support,
+              terminal_success_count,
+              terminal_failure_count,
+              terminal_unknown_count,
+              total_duration_ms,
+              last_seen_at
+            FROM state_edges
+          `
+        )
+        .all() as AnalyticsEdgeRow[];
+
+      const transitions = edges.map(summarizeAnalyticsEdge);
+
+      return {
+        generatedAt,
+        cases: {
+          total: totalCases,
+          success: successCases,
+          failure: failureCases,
+          unknown: unknownCases,
+          successRate: ratio(successCases, totalCases),
+          failureRate: ratio(failureCases, totalCases)
+        },
+        hotTransitions: [...transitions]
+          .sort((left, right) => {
+            if (right.support !== left.support) {
+              return right.support - left.support;
+            }
+
+            if (right.order !== left.order) {
+              return right.order - left.order;
+            }
+
+            return left.nextEvent.localeCompare(right.nextEvent);
+          })
+          .slice(0, limit),
+        failureBranches: transitions
+          .filter((transition) => (transition.failureRate ?? 0) > 0)
+          .sort((left, right) => {
+            if ((right.failureRate ?? 0) !== (left.failureRate ?? 0)) {
+              return (right.failureRate ?? 0) - (left.failureRate ?? 0);
+            }
+
+            if (right.support !== left.support) {
+              return right.support - left.support;
+            }
+
+            return left.nextEvent.localeCompare(right.nextEvent);
+          })
+          .slice(0, limit),
+        stallBranches: transitions
+          .filter((transition) => (transition.stallRate ?? 0) > 0)
+          .sort((left, right) => {
+            if ((right.stallRate ?? 0) !== (left.stallRate ?? 0)) {
+              return (right.stallRate ?? 0) - (left.stallRate ?? 0);
+            }
+
+            if (right.support !== left.support) {
+              return right.support - left.support;
+            }
+
+            return left.nextEvent.localeCompare(right.nextEvent);
+          })
+          .slice(0, limit)
       };
     });
   }

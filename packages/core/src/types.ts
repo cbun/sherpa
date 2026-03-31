@@ -169,6 +169,38 @@ export interface TaxonomyReportResult {
   drift: TaxonomyDriftMetrics;
 }
 
+export interface AnalyticsReportOptions {
+  limit?: number;
+  asOf?: string;
+}
+
+export interface AnalyticsTransition {
+  order: number;
+  state: string[];
+  nextEvent: string;
+  support: number;
+  successRate: number | null;
+  failureRate: number | null;
+  stallRate: number | null;
+  meanTimeToNextMs: number | null;
+  lastSeenAt: string;
+}
+
+export interface AnalyticsReportResult {
+  generatedAt: string;
+  cases: {
+    total: number;
+    success: number;
+    failure: number;
+    unknown: number;
+    successRate: number;
+    failureRate: number;
+  };
+  hotTransitions: AnalyticsTransition[];
+  failureBranches: AnalyticsTransition[];
+  stallBranches: AnalyticsTransition[];
+}
+
 export interface ExportResult {
   exportPath: string;
   exportedAt: string;

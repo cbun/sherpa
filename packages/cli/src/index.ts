@@ -179,6 +179,11 @@ async function executeRpc(engine: SherpaEngine, method: string, params: Record<s
         ...(typeof params.limit === "number" ? { limit: params.limit } : {}),
         ...(typeof params.asOf === "string" ? { asOf: params.asOf } : {})
       });
+    case "analyticsReport":
+      return engine.analyticsReport({
+        ...(typeof params.limit === "number" ? { limit: params.limit } : {}),
+        ...(typeof params.asOf === "string" ? { asOf: params.asOf } : {})
+      });
     default:
       throw new Error(`Unsupported RPC method: ${method}`);
   }
@@ -329,6 +334,19 @@ program
       ...(options.maxDriftScore ? { maxDriftScore: parseRatio(options.maxDriftScore, "--max-drift-score") } : {})
     });
     printJson(report);
+  });
+
+program
+  .command("analytics-report")
+  .description("Summarize cross-case workflow transitions and systemic branch outcomes")
+  .option("--limit <n>", "Maximum number of rows per section", "10")
+  .action(async (options, command) => {
+    const engine = createEngine(command);
+    printJson(
+      await engine.analyticsReport({
+        limit: parseInteger(options.limit, "--limit")
+      })
+    );
   });
 
 program

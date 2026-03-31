@@ -9,6 +9,13 @@ describe("resolveSherpaPluginConfig", () => {
   it("fills defaults and expands the agent root template", () => {
     const resolved = resolveSherpaPluginConfig(undefined, { agentId: "alpha" });
 
+    expect(resolved.transport).toEqual({
+      mode: "embedded",
+      command: "sherpa",
+      args: [],
+      timeoutMs: 3000,
+      env: {}
+    });
     expect(resolved.storeRoot).toBe(path.join(os.homedir(), ".openclaw/agents/alpha/sherpa"));
     expect(resolved.engine).toMatchObject({
       rootDir: path.join(os.homedir(), ".openclaw/agents/alpha/sherpa"),
@@ -78,6 +85,15 @@ describe("resolveSherpaPluginConfig", () => {
   it("respects configured overrides", () => {
     const resolved = resolveSherpaPluginConfig(
       {
+        transport: {
+          mode: "stdio",
+          command: "node",
+          args: ["./dist/index.js"],
+          timeoutMs: 15000,
+          env: {
+            SHERPA_LOG_LEVEL: "debug"
+          }
+        },
         store: {
           root: "/tmp/sherpa/{agentId}"
         },
@@ -135,6 +151,15 @@ describe("resolveSherpaPluginConfig", () => {
       { agentId: "beta" }
     );
 
+    expect(resolved.transport).toEqual({
+      mode: "stdio",
+      command: "node",
+      args: ["./dist/index.js"],
+      timeoutMs: 15000,
+      env: {
+        SHERPA_LOG_LEVEL: "debug"
+      }
+    });
     expect(resolved.storeRoot).toBe("/tmp/sherpa/beta");
     expect(resolved.engine).toMatchObject({
       rootDir: "/tmp/sherpa/beta",

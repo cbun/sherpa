@@ -1,11 +1,7 @@
-import type { SherpaEngine, SherpaEventInput } from "@sherpa/core";
+import type { SherpaEventInput } from "@sherpa/core";
 
 import type { ResolvedSherpaPluginConfig } from "./config.js";
-
-export interface SherpaPluginRuntime {
-  engine: SherpaEngine;
-  resolved: ResolvedSherpaPluginConfig;
-}
+import type { SherpaPluginRuntime } from "./backend.js";
 
 export interface SherpaMaintenanceLogger {
   warn(message: string): void;
@@ -53,7 +49,7 @@ export function createSherpaMaintenanceRuntime(params: {
     const events = batch.events.splice(0);
 
     try {
-      await batch.runtime.engine.ingestBatch(events);
+      await batch.runtime.backend.ingestBatch(events);
     } catch (error) {
       params.logger.warn(`Sherpa maintenance flush skipped: ${createWarning(error)}`);
     }
@@ -83,9 +79,9 @@ export function createSherpaMaintenanceRuntime(params: {
     await flushAll();
 
     await Promise.all(
-      params.listRuntimes().map(async ({ engine }) => {
+      params.listRuntimes().map(async ({ backend }) => {
         try {
-          await engine.gc();
+          await backend.gc();
         } catch (error) {
           params.logger.warn(`Sherpa maintenance skipped: ${createWarning(error)}`);
         }

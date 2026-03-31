@@ -10,7 +10,7 @@ Sherpa now has an alpha implementation:
 
 - `@sherpa/core`: append-only ledger, batched ingest, derived SQLite graph, and retrieval primitives
 - `sherpa`: CLI for ingest, rebuild, status, workflow-status, doctor, export, gc, workflow state, workflow next, workflow risks, and workflow recall
-- `@sherpa/openclaw`: native OpenClaw plugin package with manifest, config schema, lifecycle event capture, explicit plus automatic task-boundary case splitting, scope controls, maintenance, and native tool registration over the core engine
+- `@sherpa/openclaw`: native OpenClaw plugin package with manifest, config schema, embedded or subprocess transport, lifecycle event capture, explicit plus automatic task-boundary case splitting, scope controls, maintenance, and native tool registration over the core engine
 - `@sherpa/sdk`: Node/Bun SDK wrapper over the same core query model
 - `@sherpa/mcp`: MCP server package with stdio and stateless streamable HTTP transports over the SDK/core query model
 
@@ -118,8 +118,9 @@ node packages/mcp/dist/http.js --agent-id main --host 127.0.0.1 --port 8787
 - The current implementation rebuilds the derived graph from the ledger on each ingest or ingest batch. That keeps the source of truth simple now; incremental updates can come later.
 - The engine now supports minimum-support variable-order backoff, richer status/freshness reporting, JSON snapshot export, and graph maintenance via `gc`.
 - Risk and recall are still alpha-grade heuristics built from eventual case outcomes and suffix matching; they are useful now, but not yet the final retrieval model described in the PRD.
-- The OpenClaw package now captures session lifecycle, inbound dispatch, and tool lifecycle events with redacted-by-default metadata, debounced per-store batching, periodic maintenance, conservative scope rules, ignore/stateless session patterns, explicit task-boundary case splitting from configurable markers, explicit task completion/failure markers, automatic task starts on the first meaningful user message, rotation after a configurable idle timeout, conservative intent-shift splitting from transition phrases plus low token overlap, terminal task events when tasks are superseded or the session ends, optional bounded advisory injection, and structured degraded responses when the backend is unavailable.
+- The OpenClaw package now captures session lifecycle, inbound dispatch, and tool lifecycle events with redacted-by-default metadata, debounced per-store batching, periodic maintenance, conservative scope rules, ignore/stateless session patterns, explicit task-boundary case splitting from configurable markers, explicit task completion/failure markers, automatic task starts on the first meaningful user message, rotation after a configurable idle timeout, conservative intent-shift splitting from transition phrases plus low token overlap, terminal task events when tasks are superseded or the session ends, optional bounded advisory injection, structured degraded responses when the backend is unavailable, and a configurable backend transport that can run embedded or shell out to the Sherpa CLI.
 - The MCP package now supports stdio plus a minimal stateless streamable HTTP deployment path with a `/health` endpoint for local sidecar/service use.
+- The CLI now supports `ingest-batch` so subprocess transports can flush event bursts efficiently.
 
 ## Research Direction
 
@@ -159,10 +160,10 @@ That leads to a few practical implementation rules:
 
 ## Next Steps
 
-- Add OpenClaw richer automatic case splitting beyond explicit boundaries
 - Improve recall/risk scoring beyond the current heuristic layer
 - Improve automatic boundary heuristics beyond phrase and token-overlap rules
 - Add stronger outcome and stale-case handling beyond explicit terminal markers and session-end cleanup
+- Add a warm long-lived daemon transport for the OpenClaw plugin beyond embedded and one-shot CLI subprocess execution
 - Define a validation harness using synthetic workflow traces and real event-log datasets
 - Add CI under `.github/workflows/`
 - Add release/versioning automation once package boundaries settle

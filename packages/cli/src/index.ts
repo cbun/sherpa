@@ -70,6 +70,11 @@ async function readEventInput(file?: string): Promise<SherpaEventInput> {
   return JSON.parse(input) as SherpaEventInput;
 }
 
+async function readEventBatchInput(file?: string): Promise<SherpaEventInput[]> {
+  const input = file ? await fs.readFile(file, "utf8") : await readStdin();
+  return JSON.parse(input) as SherpaEventInput[];
+}
+
 async function readStdin(): Promise<string> {
   return new Promise((resolve, reject) => {
     let data = "";
@@ -109,6 +114,16 @@ program
     const engine = createEngine(command);
     const event = await readEventInput(file);
     printJson(await engine.ingest(event));
+  });
+
+program
+  .command("ingest-batch")
+  .description("Append multiple events to the canonical ledger and rebuild the graph")
+  .argument("[file]", "JSON array file; reads stdin when omitted")
+  .action(async (file, options, command) => {
+    const engine = createEngine(command);
+    const events = await readEventBatchInput(file);
+    printJson(await engine.ingestBatch(events));
   });
 
 program

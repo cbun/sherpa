@@ -1,4 +1,4 @@
-import { SherpaEngine, type SherpaEventInput } from "@sherpa/core";
+import type { SherpaEventInput } from "@sherpa/core";
 import { Type } from "@sinclair/typebox";
 import { jsonResult } from "openclaw/plugin-sdk/agent-runtime";
 import { definePluginEntry } from "openclaw/plugin-sdk/core";
@@ -13,6 +13,7 @@ import {
   buildToolStartEvent
 } from "./capture.js";
 import { buildSherpaAdvisory } from "./advisory.js";
+import { createSherpaBackend, type SherpaPluginRuntime } from "./backend.js";
 import { SherpaCaseRouter } from "./cases.js";
 import { resolveSherpaPluginConfig, type SherpaPluginConfig } from "./config.js";
 import { createSherpaMaintenanceRuntime } from "./maintenance.js";
@@ -36,7 +37,7 @@ function detectAgentId(params: { agentId?: string | undefined; caseId?: string |
   return "main";
 }
 
-const engineCache = new Map<string, SherpaEngine>();
+const runtimeCache = new Map<string, SherpaPluginRuntime>();
 const resolvedConfigCache = new Map<string, ReturnType<typeof resolveSherpaPluginConfig>>();
 
 function resolveRuntime(
@@ -47,25 +48,27 @@ function resolveRuntime(
     agentId: detectAgentId(params)
   });
 
-  let engine = engineCache.get(resolved.storeRoot);
+  let runtime = runtimeCache.get(resolved.storeRoot);
 
-  if (!engine) {
-    engine = new SherpaEngine(resolved.engine);
-    engineCache.set(resolved.storeRoot, engine);
-    resolvedConfigCache.set(resolved.storeRoot, resolved);
+  if (!runtime) {
+    runtime = {
+      resolved,
+      backend: createSherpaBackend(resolved)
+    };
+    runtimeCache.set(resolved.storeRoot, runtime);
   }
 
-  return {
-    resolved,
-    engine
-  };
+  runtime.resolved = resolved;
+  resolvedConfigCache.set(resolved.storeRoot, resolved);
+
+  return runtime;
 }
 
 function createEngine(
   config: SherpaPluginConfig | undefined,
   params: { agentId?: string | undefined; caseId?: string | undefined }
 ) {
-  return resolveRuntime(config, params).engine;
+  return resolveRuntime(config, params).backend;
 }
 
 function enqueueCapture(
@@ -128,9 +131,9 @@ export default definePluginEntry({
     const maintenance = createSherpaMaintenanceRuntime({
       logger: api.logger,
       listRuntimes: () =>
-        [...engineCache.entries()].flatMap(([storeRoot, engine]) => {
+        [...runtimeCache.entries()].flatMap(([storeRoot, runtime]) => {
           const resolved = resolvedConfigCache.get(storeRoot);
-          return resolved ? [{ engine, resolved }] : [];
+          return resolved ? [{ backend: runtime.backend, resolved }] : [];
         }),
       flushDebounceMs: (resolved) => resolved.update.debounceMs,
       maintenanceIntervalMs: () => baseResolved.update.intervalMs,
@@ -143,7 +146,7 @@ export default definePluginEntry({
         const mainRuntime = resolveRuntime(pluginConfig, { agentId: "main" });
 
         try {
-          await mainRuntime.engine.init();
+          await mainRuntime.backend.init();
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           api.logger.warn(`Sherpa init skipped: ${message}`);

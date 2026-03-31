@@ -4,6 +4,13 @@ import path from "node:path";
 import type { SherpaEngineOptions } from "@sherpa/core";
 
 export interface SherpaPluginConfig {
+  transport?: {
+    mode?: "embedded" | "stdio";
+    command?: string;
+    args?: string[];
+    timeoutMs?: number;
+    env?: Record<string, string>;
+  };
   store?: {
     root?: string;
   };
@@ -71,6 +78,13 @@ export interface SherpaPluginConfig {
 }
 
 export interface ResolvedSherpaPluginConfig {
+  transport: {
+    mode: "embedded" | "stdio";
+    command: string;
+    args: string[];
+    timeoutMs: number;
+    env: Record<string, string>;
+  };
   storeRoot: string;
   engine: SherpaEngineOptions;
   ledger: {
@@ -176,6 +190,13 @@ export function resolveSherpaPluginConfig(
   const storeRoot = expandHomeDir(configuredRoot.replaceAll("{agentId}", agentId));
 
   return {
+    transport: {
+      mode: config?.transport?.mode ?? "embedded",
+      command: config?.transport?.command ?? "sherpa",
+      args: config?.transport?.args ?? [],
+      timeoutMs: config?.transport?.timeoutMs ?? config?.update?.commandTimeoutMs ?? 3000,
+      env: config?.transport?.env ?? {}
+    },
     storeRoot,
     engine: {
       rootDir: storeRoot,

@@ -7,6 +7,36 @@
     "type": "object",
     "additionalProperties": false,
     "properties": {
+      "transport": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": ["embedded", "stdio"],
+            "default": "embedded"
+          },
+          "command": {
+            "type": "string",
+            "default": "sherpa"
+          },
+          "args": {
+            "type": "array",
+            "items": { "type": "string" },
+            "default": []
+          },
+          "timeoutMs": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 3000
+          },
+          "env": {
+            "type": "object",
+            "additionalProperties": { "type": "string" },
+            "default": {}
+          }
+        }
+      },
       "store": {
         "type": "object",
         "additionalProperties": false,
@@ -164,6 +194,18 @@
     }
   },
   "uiHints": {
+    "transport.mode": {
+      "label": "Transport Mode"
+    },
+    "transport.command": {
+      "label": "Transport Command"
+    },
+    "transport.args": {
+      "label": "Transport Args"
+    },
+    "transport.timeoutMs": {
+      "label": "Transport Timeout"
+    },
     "store.root": {
       "label": "Store Root",
       "placeholder": "~/.openclaw/agents/{agentId}/sherpa"

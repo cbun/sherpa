@@ -9,6 +9,13 @@ afterEach(() => {
 
 function createResolved(storeRoot: string): ResolvedSherpaPluginConfig {
   return {
+    transport: {
+      mode: "embedded",
+      command: "sherpa",
+      args: [],
+      timeoutMs: 5000,
+      env: {}
+    },
     storeRoot,
     engine: {
       rootDir: storeRoot,
@@ -94,7 +101,7 @@ describe("createSherpaMaintenanceRuntime", () => {
     const gc = vi.fn().mockResolvedValue(undefined);
     const runtime = {
       resolved: createResolved("/tmp/sherpa-alpha"),
-      engine: {
+      backend: {
         ingestBatch,
         gc
       }
@@ -139,7 +146,7 @@ describe("createSherpaMaintenanceRuntime", () => {
     const gc = vi.fn().mockResolvedValue(undefined);
     const runtime = {
       resolved: createResolved("/tmp/sherpa-alpha"),
-      engine: {
+      backend: {
         ingestBatch,
         gc
       }

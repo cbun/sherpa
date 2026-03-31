@@ -115,8 +115,14 @@ Selected sources:
 
 ### 1. Install the plugin
 
+Sherpa is not yet published to the plugin registry. Install from a local build:
+
 ```bash
-openclaw plugins install @sherpa/openclaw
+cd sherpa
+pnpm install && pnpm build
+
+# then link or point OpenClaw at the local package
+openclaw plugins install --local ./packages/openclaw
 ```
 
 ### 2. Add a small config block

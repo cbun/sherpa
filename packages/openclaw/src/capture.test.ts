@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { buildDispatchEvent, buildSessionStartEvent, buildToolFinishEvent, classifyToolFamily } from "./capture.js";
+import {
+  buildDispatchEvent,
+  buildSessionStartEvent,
+  buildTaskEndEvent,
+  buildToolFinishEvent,
+  classifyToolFamily
+} from "./capture.js";
 import { resolveSherpaPluginConfig } from "./config.js";
 
 describe("capture normalization", () => {
@@ -88,5 +94,27 @@ describe("capture normalization", () => {
     });
 
     expect(event).toBeNull();
+  });
+
+  it("captures explicit task terminal events with bounded metadata", () => {
+    const config = resolveSherpaPluginConfig(undefined, { agentId: "alpha" });
+
+    const event = buildTaskEndEvent(config, {
+      agentId: "alpha",
+      sessionKey: "agent:alpha:telegram:direct:user-123",
+      title: "Investigate deployment error",
+      slug: "investigate-deployment-error",
+      terminalType: "task.completed",
+      reason: "explicit-complete",
+      timestamp: Date.parse("2026-03-30T15:00:00.000Z")
+    });
+
+    expect(event).toMatchObject({
+      agentId: "alpha",
+      source: "openclaw.task",
+      type: "task.completed",
+      outcome: "success",
+      labels: ["task:investigate-deployment-error", "task-terminal:explicit-complete"]
+    });
   });
 });

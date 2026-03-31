@@ -1,0 +1,26 @@
+{
+  "name": "sherpa",
+  "version": "0.1.0",
+  "description": "CLI for Sherpa procedural memory",
+  "type": "module",
+  "bin": {
+    "sherpa": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --project tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@sherpa/core": "workspace:*",
+    "commander": "^14.0.3"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

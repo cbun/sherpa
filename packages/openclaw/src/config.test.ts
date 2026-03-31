@@ -49,6 +49,8 @@ describe("resolveSherpaPluginConfig", () => {
     expect(resolved.caseSplitting).toEqual({
       enabled: true,
       markers: ["/new", "/task", "task:", "case:"],
+      completeMarkers: ["/done", "/complete", "done:", "complete:"],
+      failMarkers: ["/fail", "/failed", "failed:", "blocked:"],
       auto: {
         enabled: true,
         idleTimeout: "30m",
@@ -119,6 +121,8 @@ describe("resolveSherpaPluginConfig", () => {
         caseSplitting: {
           enabled: false,
           markers: ["/focus", "ticket:"],
+          completeMarkers: ["/ship"],
+          failMarkers: ["/blocked"],
           auto: {
             enabled: false,
             idleTimeout: "10m",
@@ -174,6 +178,8 @@ describe("resolveSherpaPluginConfig", () => {
     expect(resolved.caseSplitting).toEqual({
       enabled: false,
       markers: ["/focus", "ticket:"],
+      completeMarkers: ["/ship"],
+      failMarkers: ["/blocked"],
       auto: {
         enabled: false,
         idleTimeout: "10m",

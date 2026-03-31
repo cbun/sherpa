@@ -7,6 +7,7 @@ import {
   buildDispatchEvent,
   buildSessionEndEvent,
   buildSessionStartEvent,
+  buildTaskEndEvent,
   buildTaskStartEvent,
   buildToolFinishEvent,
   buildToolStartEvent
@@ -188,18 +189,43 @@ export default definePluginEntry({
       }
 
       const runtime = resolveRuntime(pluginConfig, ctx);
+      const terminal = caseRouter.closeActiveCase({
+        sessionKey: ctx.sessionKey,
+        reason: "session-end"
+      });
+      if (terminal) {
+        enqueueCapture(
+          maintenance,
+          runtime,
+          buildTaskEndEvent(
+            runtime.resolved,
+            {
+              agentId: decision.agentId,
+              sessionId: event.sessionId,
+              sessionKey: ctx.sessionKey,
+              title: terminal.title,
+              slug: terminal.slug,
+              terminalType: terminal.terminalType,
+              reason: terminal.reason,
+              timestamp: Date.now()
+            },
+            { caseId: terminal.caseId }
+          )
+        );
+      }
       const caseId =
+        terminal?.caseId ??
         caseRouter.resolveActiveCaseId({
           policy: decision,
           sessionId: event.sessionId,
           sessionKey: ctx.sessionKey
-        }) ?? resolveCaptureCaseId(decision, { ...event, ...ctx });
+        }) ??
+        resolveCaptureCaseId(decision, { ...event, ...ctx });
       enqueueCapture(
         maintenance,
         runtime,
         buildSessionEndEvent(runtime.resolved, { ...event, ...ctx }, { caseId })
       );
-      caseRouter.clearSession(ctx.sessionKey);
     });
 
     api.on("before_dispatch", (event, ctx) => {
@@ -220,6 +246,30 @@ export default definePluginEntry({
       });
 
       const boundary = dispatchRouting.boundary;
+      const terminal = dispatchRouting.terminal;
+      if (terminal) {
+        const terminalRuntime = resolveRuntime(pluginConfig, {
+          agentId: decision.agentId,
+          caseId: terminal.caseId
+        });
+        enqueueCapture(
+          maintenance,
+          terminalRuntime,
+          buildTaskEndEvent(
+            terminalRuntime.resolved,
+            {
+              agentId: decision.agentId,
+              sessionKey: ctx.sessionKey,
+              title: terminal.title,
+              slug: terminal.slug,
+              terminalType: terminal.terminalType,
+              reason: terminal.reason,
+              timestamp: event.timestamp
+            },
+            { caseId: terminal.caseId }
+          )
+        );
+      }
       if (boundary) {
         const taskRuntime = resolveRuntime(pluginConfig, {
           agentId: decision.agentId,
@@ -460,6 +510,75 @@ export default definePluginEntry({
             ...status,
             advisoryEnabled: baseResolved.advisory.enabled
           });
+        } catch (error) {
+          return unavailableResult(error);
+        }
+      }
+    });
+
+    api.registerTool({
+      name: "workflow_doctor",
+      label: "Workflow Doctor",
+      description: "Run Sherpa health checks",
+      parameters: Type.Object({
+        agentId: Type.Optional(Type.String())
+      }),
+      async execute(_id, params) {
+        try {
+          const engine = createEngine(pluginConfig, params);
+          return jsonResult(await engine.doctor());
+        } catch (error) {
+          return unavailableResult(error);
+        }
+      }
+    });
+
+    api.registerTool({
+      name: "workflow_rebuild",
+      label: "Workflow Rebuild",
+      description: "Rebuild Sherpa's derived graph from the canonical ledger",
+      parameters: Type.Object({
+        agentId: Type.Optional(Type.String())
+      }),
+      async execute(_id, params) {
+        try {
+          const engine = createEngine(pluginConfig, params);
+          await engine.rebuild();
+          return jsonResult(await engine.status());
+        } catch (error) {
+          return unavailableResult(error);
+        }
+      }
+    });
+
+    api.registerTool({
+      name: "workflow_export",
+      label: "Workflow Export",
+      description: "Export a JSON snapshot of the current Sherpa state",
+      parameters: Type.Object({
+        agentId: Type.Optional(Type.String())
+      }),
+      async execute(_id, params) {
+        try {
+          const engine = createEngine(pluginConfig, params);
+          return jsonResult(await engine.exportSnapshot());
+        } catch (error) {
+          return unavailableResult(error);
+        }
+      }
+    });
+
+    api.registerTool({
+      name: "workflow_gc",
+      label: "Workflow GC",
+      description: "Run Sherpa graph vacuum and temp/export cleanup",
+      parameters: Type.Object({
+        agentId: Type.Optional(Type.String())
+      }),
+      async execute(_id, params) {
+        try {
+          const engine = createEngine(pluginConfig, params);
+          return jsonResult(await engine.gc());
         } catch (error) {
           return unavailableResult(error);
         }

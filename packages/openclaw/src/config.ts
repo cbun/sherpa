@@ -50,6 +50,8 @@ export interface SherpaPluginConfig {
   caseSplitting?: {
     enabled?: boolean;
     markers?: string[];
+    completeMarkers?: string[];
+    failMarkers?: string[];
     auto?: {
       enabled?: boolean;
       idleTimeout?: string;
@@ -116,6 +118,8 @@ export interface ResolvedSherpaPluginConfig {
   caseSplitting: {
     enabled: boolean;
     markers: string[];
+    completeMarkers: string[];
+    failMarkers: string[];
     auto: {
       enabled: boolean;
       idleTimeout: string;
@@ -239,6 +243,8 @@ export function resolveSherpaPluginConfig(
     caseSplitting: {
       enabled: config?.caseSplitting?.enabled ?? true,
       markers: config?.caseSplitting?.markers ?? ["/new", "/task", "task:", "case:"],
+      completeMarkers: config?.caseSplitting?.completeMarkers ?? ["/done", "/complete", "done:", "complete:"],
+      failMarkers: config?.caseSplitting?.failMarkers ?? ["/fail", "/failed", "failed:", "blocked:"],
       auto: {
         enabled: config?.caseSplitting?.auto?.enabled ?? true,
         idleTimeout: config?.caseSplitting?.auto?.idleTimeout ?? "30m",

@@ -94,6 +94,10 @@ describe("SherpaCaseRouter", () => {
       reason: "auto-idle-timeout",
       title: "Now summarize the customer impact for leadership"
     });
+    expect(dispatch.terminal).toMatchObject({
+      terminalType: "task.ended",
+      reason: "superseded"
+    });
   });
 
   it("rotates to a new automatic case on a strong intent-shift signal with low topic overlap", () => {
@@ -121,6 +125,10 @@ describe("SherpaCaseRouter", () => {
       reason: "auto-intent-shift",
       title: "Switching gears: draft the customer renewal email"
     });
+    expect(dispatch.terminal).toMatchObject({
+      terminalType: "task.ended",
+      reason: "superseded"
+    });
   });
 
   it("does not rotate on a shift phrase when the topic still overlaps strongly", () => {
@@ -145,7 +153,95 @@ describe("SherpaCaseRouter", () => {
     });
 
     expect(second.boundary).toBeNull();
+    expect(second.terminal).toBeNull();
     expect(second.caseId).toBe(first.caseId);
+  });
+
+  it("closes the active task when an explicit completion marker is sent", () => {
+    const config = resolveSherpaPluginConfig(undefined, { agentId: "alpha" });
+    const router = new SherpaCaseRouter(config);
+    const policy = resolveSherpaPolicyDecision(config, {
+      sessionKey: "agent:alpha:telegram:direct:user-1"
+    });
+
+    const first = router.routeDispatch({
+      policy,
+      sessionKey: "agent:alpha:telegram:direct:user-1",
+      content: "Investigate the deployment error in production.",
+      timestamp: 1_000
+    });
+
+    const second = router.routeDispatch({
+      policy,
+      sessionKey: "agent:alpha:telegram:direct:user-1",
+      content: "/done",
+      timestamp: 2_000
+    });
+
+    expect(second.boundary).toBeNull();
+    expect(second.terminal).toMatchObject({
+      caseId: first.caseId,
+      terminalType: "task.completed",
+      reason: "explicit-complete"
+    });
+    expect(
+      router.resolveActiveCaseId({
+        policy,
+        sessionKey: "agent:alpha:telegram:direct:user-1"
+      })
+    ).toBeUndefined();
+  });
+
+  it("closes the active task when an explicit failure marker is sent", () => {
+    const config = resolveSherpaPluginConfig(undefined, { agentId: "alpha" });
+    const router = new SherpaCaseRouter(config);
+    const policy = resolveSherpaPolicyDecision(config, {
+      sessionKey: "agent:alpha:telegram:direct:user-1"
+    });
+
+    router.routeDispatch({
+      policy,
+      sessionKey: "agent:alpha:telegram:direct:user-1",
+      content: "Investigate the deployment error in production.",
+      timestamp: 1_000
+    });
+
+    const second = router.routeDispatch({
+      policy,
+      sessionKey: "agent:alpha:telegram:direct:user-1",
+      content: "/failed",
+      timestamp: 2_000
+    });
+
+    expect(second.terminal).toMatchObject({
+      terminalType: "task.failed",
+      reason: "explicit-fail"
+    });
+  });
+
+  it("can close the active task on session end", () => {
+    const config = resolveSherpaPluginConfig(undefined, { agentId: "alpha" });
+    const router = new SherpaCaseRouter(config);
+    const policy = resolveSherpaPolicyDecision(config, {
+      sessionKey: "agent:alpha:telegram:direct:user-1"
+    });
+
+    router.routeDispatch({
+      policy,
+      sessionKey: "agent:alpha:telegram:direct:user-1",
+      content: "Investigate the deployment error in production.",
+      timestamp: 1_000
+    });
+
+    expect(
+      router.closeActiveCase({
+        sessionKey: "agent:alpha:telegram:direct:user-1",
+        reason: "session-end"
+      })
+    ).toMatchObject({
+      terminalType: "task.ended",
+      reason: "session-end"
+    });
   });
 
   it("does not open explicit cases when case splitting is disabled", () => {

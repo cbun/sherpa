@@ -56,6 +56,17 @@ type TaskStartCaptureInput = {
   timestamp?: number | undefined;
 };
 
+type TaskEndCaptureInput = {
+  agentId?: string | undefined;
+  sessionId?: string | undefined;
+  sessionKey?: string | undefined;
+  title: string;
+  slug: string;
+  terminalType: "task.completed" | "task.failed" | "task.ended";
+  reason?: "explicit-complete" | "explicit-fail" | "session-end" | "superseded";
+  timestamp?: number | undefined;
+};
+
 function normalizeOpaqueId(value: string | undefined | null) {
   return (value ?? "")
     .trim()
@@ -331,6 +342,46 @@ export function buildTaskStartEvent(
         sessionId: safeString(input.sessionId),
         sessionKey: safeString(input.sessionKey),
         boundaryReason: safeString(input.reason),
+        ...(config.ledger.redactRawText ? {} : { title: input.title })
+      },
+      config.ledger.maxMetaBytes
+    )
+  };
+}
+
+export function buildTaskEndEvent(
+  config: ResolvedSherpaPluginConfig,
+  input: TaskEndCaptureInput,
+  options?: CaptureEventOptions
+): SherpaEventInput {
+  const agentId = resolveAgentId(input);
+  const outcome =
+    input.terminalType === "task.completed"
+      ? "success"
+      : input.terminalType === "task.failed"
+        ? "failure"
+        : "unknown";
+
+  return {
+    agentId,
+    caseId: options?.caseId ?? buildSessionCaseId(input),
+    ts: typeof input.timestamp === "number" ? new Date(input.timestamp).toISOString() : undefined,
+    source: "openclaw.task",
+    type: input.terminalType,
+    actor: "user",
+    outcome,
+    labels: [
+      `task:${input.slug}`,
+      ...(input.reason ? [`task-terminal:${input.reason}`] : [])
+    ],
+    metrics: {
+      titleChars: input.title.length
+    },
+    meta: clampMeta(
+      {
+        sessionId: safeString(input.sessionId),
+        sessionKey: safeString(input.sessionKey),
+        terminalReason: safeString(input.reason),
         ...(config.ledger.redactRawText ? {} : { title: input.title })
       },
       config.ledger.maxMetaBytes

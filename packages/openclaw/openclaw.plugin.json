@@ -110,6 +110,16 @@
             "items": { "type": "string" },
             "default": ["/new", "/task", "task:", "case:"]
           },
+          "completeMarkers": {
+            "type": "array",
+            "items": { "type": "string" },
+            "default": ["/done", "/complete", "done:", "complete:"]
+          },
+          "failMarkers": {
+            "type": "array",
+            "items": { "type": "string" },
+            "default": ["/fail", "/failed", "failed:", "blocked:"]
+          },
           "auto": {
             "type": "object",
             "additionalProperties": false,
@@ -208,6 +218,12 @@
     },
     "caseSplitting.markers": {
       "label": "Case Split Markers"
+    },
+    "caseSplitting.completeMarkers": {
+      "label": "Case Complete Markers"
+    },
+    "caseSplitting.failMarkers": {
+      "label": "Case Fail Markers"
     },
     "caseSplitting.auto.enabled": {
       "label": "Auto Split Cases"

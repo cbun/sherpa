@@ -60,6 +60,8 @@ function createResolved(storeRoot: string): ResolvedSherpaPluginConfig {
     caseSplitting: {
       enabled: true,
       markers: ["/new", "/task", "task:", "case:"],
+      completeMarkers: ["/done", "/complete", "done:", "complete:"],
+      failMarkers: ["/fail", "/failed", "failed:", "blocked:"],
       auto: {
         enabled: true,
         idleTimeout: "30m",

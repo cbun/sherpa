@@ -19,11 +19,20 @@ export type TaskBoundary = {
   reason: "explicit" | "auto-first-message" | "auto-idle-timeout" | "auto-intent-shift";
 };
 
+export type TaskTerminal = {
+  caseId: string;
+  title: string;
+  slug: string;
+  terminalType: "task.completed" | "task.failed" | "task.ended";
+  reason: "explicit-complete" | "explicit-fail" | "session-end" | "superseded";
+};
+
 type ActiveCaseState = {
   caseId: string;
   lastMessageAt: number;
   title: string;
   titleTokens: string[];
+  slug: string;
 };
 
 const STOP_WORDS = new Set([
@@ -170,6 +179,32 @@ export class SherpaCaseRouter {
     return null;
   }
 
+  private detectTerminalMarker(content: string) {
+    const trimmed = content.trim().toLowerCase();
+
+    for (const marker of this.config.caseSplitting.completeMarkers) {
+      const normalizedMarker = marker.trim().toLowerCase();
+      if (normalizedMarker && trimmed.startsWith(normalizedMarker)) {
+        return {
+          terminalType: "task.completed" as const,
+          reason: "explicit-complete" as const
+        };
+      }
+    }
+
+    for (const marker of this.config.caseSplitting.failMarkers) {
+      const normalizedMarker = marker.trim().toLowerCase();
+      if (normalizedMarker && trimmed.startsWith(normalizedMarker)) {
+        return {
+          terminalType: "task.failed" as const,
+          reason: "explicit-fail" as const
+        };
+      }
+    }
+
+    return null;
+  }
+
   private detectAutomaticBoundary(params: {
     sessionKey: string;
     content: string;
@@ -234,6 +269,7 @@ export class SherpaCaseRouter {
     if (params.policy.stateless) {
       return {
         boundary: null,
+        terminal: null,
         caseId: null
       };
     }
@@ -242,7 +278,26 @@ export class SherpaCaseRouter {
     if (!sessionKey) {
       return {
         boundary: null,
+        terminal: null,
         caseId: null
+      };
+    }
+
+    const current = this.activeCases.get(sessionKey) ?? null;
+    const terminalMarker = this.detectTerminalMarker(params.content);
+    if (terminalMarker && current) {
+      this.activeCases.delete(sessionKey);
+
+      return {
+        boundary: null,
+        terminal: {
+          caseId: current.caseId,
+          title: current.title,
+          slug: current.slug,
+          terminalType: terminalMarker.terminalType,
+          reason: terminalMarker.reason
+        },
+        caseId: current.caseId
       };
     }
 
@@ -264,19 +319,31 @@ export class SherpaCaseRouter {
     if (!title || !reason) {
       return {
         boundary: null,
-        caseId: this.activeCases.get(sessionKey)?.caseId ?? null
+        terminal: null,
+        caseId: current?.caseId ?? null
       };
     }
 
     const slug = slugify(title);
     const timestamp = automaticBoundary?.timestamp ?? (typeof params.timestamp === "number" ? params.timestamp : Date.now());
     const caseId = `session:${sessionKey}:task:${slug}:${timestamp}`;
+    const terminal =
+      current && current.caseId !== caseId
+        ? {
+            caseId: current.caseId,
+            title: current.title,
+            slug: current.slug,
+            terminalType: "task.ended" as const,
+            reason: "superseded" as const
+          }
+        : null;
 
     this.activeCases.set(sessionKey, {
       caseId,
       lastMessageAt: timestamp,
       title,
-      titleTokens: tokenize(title)
+      titleTokens: tokenize(title),
+      slug
     });
 
     return {
@@ -286,6 +353,7 @@ export class SherpaCaseRouter {
         slug,
         reason
       },
+      terminal,
       caseId
     };
   }
@@ -318,7 +386,8 @@ export class SherpaCaseRouter {
       caseId,
       lastMessageAt: suffix,
       title,
-      titleTokens: tokenize(title)
+      titleTokens: tokenize(title),
+      slug
     });
 
     return {
@@ -336,5 +405,30 @@ export class SherpaCaseRouter {
     }
 
     this.activeCases.delete(normalized);
+  }
+
+  closeActiveCase(params: {
+    sessionKey?: string | undefined;
+    reason: "session-end" | "superseded";
+  }): TaskTerminal | null {
+    const sessionKey = this.normalizedSessionKey(params.sessionKey);
+    if (!sessionKey) {
+      return null;
+    }
+
+    const current = this.activeCases.get(sessionKey);
+    if (!current) {
+      return null;
+    }
+
+    this.activeCases.delete(sessionKey);
+
+    return {
+      caseId: current.caseId,
+      title: current.title,
+      slug: current.slug,
+      terminalType: "task.ended",
+      reason: params.reason
+    };
   }
 }

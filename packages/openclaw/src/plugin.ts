@@ -1,3 +1,5 @@
+import { spawn, type ChildProcess } from "node:child_process";
+
 import type { SherpaEventInput } from "@sherpa/core";
 import { Type } from "@sinclair/typebox";
 import { jsonResult } from "openclaw/plugin-sdk/agent-runtime";
@@ -13,7 +15,7 @@ import {
   buildToolStartEvent
 } from "./capture.js";
 import { buildSherpaAdvisory } from "./advisory.js";
-import { backendNeedsRefresh, createSherpaBackend, type SherpaPluginRuntime } from "./backend.js";
+import { backendNeedsRefresh, buildCliSharedArgs, createSherpaBackend, type SherpaPluginRuntime } from "./backend.js";
 import { SherpaCaseRouter } from "./cases.js";
 import { resolveSherpaPluginConfig, type SherpaPluginConfig } from "./config.js";
 import { createSherpaMaintenanceRuntime } from "./maintenance.js";
@@ -39,6 +41,7 @@ function detectAgentId(params: { agentId?: string | undefined; caseId?: string |
 
 const runtimeCache = new Map<string, SherpaPluginRuntime>();
 const resolvedConfigCache = new Map<string, ReturnType<typeof resolveSherpaPluginConfig>>();
+const daemonCache = new Map<string, ChildProcess>();
 
 function resolveRuntime(
   config: SherpaPluginConfig | undefined,
@@ -60,15 +63,69 @@ function resolveRuntime(
 
   runtime.resolved = resolved;
   resolvedConfigCache.set(resolved.storeRoot, resolved);
+  ensureManagedDaemonProcess(resolved);
 
   return runtime;
 }
 
-function createEngine(
-  config: SherpaPluginConfig | undefined,
-  params: { agentId?: string | undefined; caseId?: string | undefined }
-) {
-  return resolveRuntime(config, params).backend;
+function ensureManagedDaemonProcess(resolved: ReturnType<typeof resolveSherpaPluginConfig>) {
+  if (resolved.transport.mode !== "http" || !resolved.transport.manageProcess) {
+    return null;
+  }
+
+  const existing = daemonCache.get(resolved.storeRoot);
+  if (existing && existing.exitCode === null && !existing.killed) {
+    return existing;
+  }
+
+  const url = new URL(resolved.transport.baseUrl);
+  const host = url.hostname;
+  const port = url.port || (url.protocol === "https:" ? "443" : "80");
+  const child = spawn(
+    resolved.transport.command,
+    [...buildCliSharedArgs(resolved), "serve", "--host", host, "--port", port],
+    {
+      env: {
+        ...process.env,
+        ...resolved.transport.env
+      },
+      stdio: "ignore"
+    }
+  );
+
+  child.unref();
+  child.once("exit", () => {
+    daemonCache.delete(resolved.storeRoot);
+  });
+  daemonCache.set(resolved.storeRoot, child);
+  return child;
+}
+
+async function waitForManagedDaemon(resolved: ReturnType<typeof resolveSherpaPluginConfig>) {
+  if (resolved.transport.mode !== "http" || !resolved.transport.manageProcess) {
+    return;
+  }
+
+  ensureManagedDaemonProcess(resolved);
+
+  const deadline = Date.now() + resolved.transport.timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(new URL("/health", resolved.transport.baseUrl), {
+        ...(resolved.transport.timeoutMs > 0
+          ? { signal: AbortSignal.timeout(Math.min(500, resolved.transport.timeoutMs)) }
+          : {})
+      });
+
+      if (response.ok) {
+        return;
+      }
+    } catch {}
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+
+  throw new Error(`Timed out waiting for Sherpa daemon at ${resolved.transport.baseUrl}`);
 }
 
 function enqueueCapture(
@@ -146,6 +203,7 @@ export default definePluginEntry({
         const mainRuntime = resolveRuntime(pluginConfig, { agentId: "main" });
 
         try {
+          await waitForManagedDaemon(mainRuntime.resolved);
           await mainRuntime.backend.init();
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
@@ -156,6 +214,11 @@ export default definePluginEntry({
       },
       async stop() {
         await maintenance.stop();
+
+        for (const child of daemonCache.values()) {
+          child.kill("SIGTERM");
+        }
+        daemonCache.clear();
       }
     });
 
@@ -366,10 +429,12 @@ export default definePluginEntry({
         }) ?? `session:${ctx.sessionKey}`;
 
       try {
-        const engine = createEngine(pluginConfig, {
+        const runtime = resolveRuntime(pluginConfig, {
           agentId: decision.agentId,
           caseId
         });
+        await waitForManagedDaemon(runtime.resolved);
+        const engine = runtime.backend;
         const [state, next, risks] = await Promise.all([
           engine.workflowState(caseId),
           engine.workflowNext(caseId, baseResolved.advisory.maxCandidates),
@@ -432,7 +497,9 @@ export default definePluginEntry({
       }),
       async execute(_id, params) {
         try {
-          const engine = createEngine(pluginConfig, params);
+          const runtime = resolveRuntime(pluginConfig, params);
+          await waitForManagedDaemon(runtime.resolved);
+          const engine = runtime.backend;
           return jsonResult(await engine.workflowState(params.caseId, params.maxOrder));
         } catch (error) {
           return unavailableResult(error);
@@ -451,7 +518,9 @@ export default definePluginEntry({
       }),
       async execute(_id, params) {
         try {
-          const engine = createEngine(pluginConfig, params);
+          const runtime = resolveRuntime(pluginConfig, params);
+          await waitForManagedDaemon(runtime.resolved);
+          const engine = runtime.backend;
           return jsonResult(await engine.workflowNext(params.caseId, params.limit ?? 5));
         } catch (error) {
           return unavailableResult(error);
@@ -470,7 +539,9 @@ export default definePluginEntry({
       }),
       async execute(_id, params) {
         try {
-          const engine = createEngine(pluginConfig, params);
+          const runtime = resolveRuntime(pluginConfig, params);
+          await waitForManagedDaemon(runtime.resolved);
+          const engine = runtime.backend;
           return jsonResult(await engine.workflowRisks(params.caseId, params.limit ?? 3));
         } catch (error) {
           return unavailableResult(error);
@@ -490,7 +561,9 @@ export default definePluginEntry({
       }),
       async execute(_id, params) {
         try {
-          const engine = createEngine(pluginConfig, params);
+          const runtime = resolveRuntime(pluginConfig, params);
+          await waitForManagedDaemon(runtime.resolved);
+          const engine = runtime.backend;
           return jsonResult(await engine.workflowRecall(params.caseId, params.mode ?? "successful", params.limit ?? 3));
         } catch (error) {
           return unavailableResult(error);
@@ -508,6 +581,7 @@ export default definePluginEntry({
       async execute(_id, params) {
         try {
           const runtime = resolveRuntime(pluginConfig, params);
+          await waitForManagedDaemon(runtime.resolved);
           const status = await runtime.backend.status();
           return jsonResult({
             ...status,
@@ -518,11 +592,13 @@ export default definePluginEntry({
                 ? {
                     command: runtime.resolved.transport.command,
                     args: runtime.resolved.transport.args,
+                    manageProcess: runtime.resolved.transport.manageProcess,
                     timeoutMs: runtime.resolved.transport.timeoutMs
                   }
                 : runtime.resolved.transport.mode === "http"
                   ? {
                       baseUrl: runtime.resolved.transport.baseUrl,
+                      manageProcess: runtime.resolved.transport.manageProcess,
                       timeoutMs: runtime.resolved.transport.timeoutMs
                     }
                 : {})
@@ -557,7 +633,9 @@ export default definePluginEntry({
       }),
       async execute(_id, params) {
         try {
-          const engine = createEngine(pluginConfig, params);
+          const runtime = resolveRuntime(pluginConfig, params);
+          await waitForManagedDaemon(runtime.resolved);
+          const engine = runtime.backend;
           return jsonResult(await engine.doctor());
         } catch (error) {
           return unavailableResult(error);
@@ -574,7 +652,9 @@ export default definePluginEntry({
       }),
       async execute(_id, params) {
         try {
-          const engine = createEngine(pluginConfig, params);
+          const runtime = resolveRuntime(pluginConfig, params);
+          await waitForManagedDaemon(runtime.resolved);
+          const engine = runtime.backend;
           await engine.rebuild();
           return jsonResult(await engine.status());
         } catch (error) {
@@ -592,7 +672,9 @@ export default definePluginEntry({
       }),
       async execute(_id, params) {
         try {
-          const engine = createEngine(pluginConfig, params);
+          const runtime = resolveRuntime(pluginConfig, params);
+          await waitForManagedDaemon(runtime.resolved);
+          const engine = runtime.backend;
           return jsonResult(await engine.exportSnapshot());
         } catch (error) {
           return unavailableResult(error);
@@ -609,7 +691,9 @@ export default definePluginEntry({
       }),
       async execute(_id, params) {
         try {
-          const engine = createEngine(pluginConfig, params);
+          const runtime = resolveRuntime(pluginConfig, params);
+          await waitForManagedDaemon(runtime.resolved);
+          const engine = runtime.backend;
           return jsonResult(await engine.gc());
         } catch (error) {
           return unavailableResult(error);
@@ -641,7 +725,9 @@ export default definePluginEntry({
         }),
         async execute(_id, params) {
           try {
-            const engine = createEngine(pluginConfig, params.event);
+            const runtime = resolveRuntime(pluginConfig, params.event);
+            await waitForManagedDaemon(runtime.resolved);
+            const engine = runtime.backend;
             return jsonResult(await engine.ingest(params.event as SherpaEventInput));
           } catch (error) {
             return unavailableResult(error);

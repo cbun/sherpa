@@ -14,6 +14,7 @@ describe("resolveSherpaPluginConfig", () => {
       command: "sherpa",
       args: [],
       baseUrl: "http://127.0.0.1:8787",
+      manageProcess: false,
       timeoutMs: 3000,
       env: {}
     });
@@ -93,6 +94,7 @@ describe("resolveSherpaPluginConfig", () => {
           command: "node",
           args: ["./dist/index.js"],
           baseUrl: "http://127.0.0.1:9898",
+          manageProcess: true,
           timeoutMs: 15000,
           env: {
             SHERPA_LOG_LEVEL: "debug"
@@ -161,6 +163,7 @@ describe("resolveSherpaPluginConfig", () => {
       command: "node",
       args: ["./dist/index.js"],
       baseUrl: "http://127.0.0.1:9898",
+      manageProcess: true,
       timeoutMs: 15000,
       env: {
         SHERPA_LOG_LEVEL: "debug"

@@ -9,6 +9,7 @@ export interface SherpaPluginConfig {
     command?: string;
     args?: string[];
     baseUrl?: string;
+    manageProcess?: boolean;
     timeoutMs?: number;
     env?: Record<string, string>;
   };
@@ -85,6 +86,7 @@ export interface ResolvedSherpaPluginConfig {
     command: string;
     args: string[];
     baseUrl: string;
+    manageProcess: boolean;
     timeoutMs: number;
     env: Record<string, string>;
   };
@@ -200,6 +202,7 @@ export function resolveSherpaPluginConfig(
       command: config?.transport?.command ?? "sherpa",
       args: config?.transport?.args ?? [],
       baseUrl: config?.transport?.baseUrl ?? "http://127.0.0.1:8787",
+      manageProcess: config?.transport?.manageProcess ?? false,
       timeoutMs: config?.transport?.timeoutMs ?? config?.update?.commandTimeoutMs ?? 3000,
       env: config?.transport?.env ?? {}
     },

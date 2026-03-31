@@ -29,6 +29,10 @@
             "type": "string",
             "default": "http://127.0.0.1:8787"
           },
+          "manageProcess": {
+            "type": "boolean",
+            "default": false
+          },
           "timeoutMs": {
             "type": "integer",
             "minimum": 1,
@@ -210,6 +214,9 @@
     },
     "transport.baseUrl": {
       "label": "Transport Base URL"
+    },
+    "transport.manageProcess": {
+      "label": "Manage Transport Process"
     },
     "transport.timeoutMs": {
       "label": "Transport Timeout"

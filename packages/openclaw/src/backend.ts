@@ -127,28 +127,6 @@ export class CliSherpaBackend implements SherpaBackend {
     private readonly spawnImpl: SpawnLike = spawn
   ) {}
 
-  private sharedArgs() {
-    const args = [...this.resolved.transport.args, "--root", this.resolved.storeRoot];
-
-    if (this.resolved.engine.defaultOrder !== undefined) {
-      args.push("--default-order", String(this.resolved.engine.defaultOrder));
-    }
-
-    if (this.resolved.engine.minOrder !== undefined) {
-      args.push("--min-order", String(this.resolved.engine.minOrder));
-    }
-
-    if (this.resolved.engine.maxOrder !== undefined) {
-      args.push("--max-order", String(this.resolved.engine.maxOrder));
-    }
-
-    if (this.resolved.engine.minSupport !== undefined) {
-      args.push("--min-support", String(this.resolved.engine.minSupport));
-    }
-
-    return args;
-  }
-
   private async runJson<T>(commandArgs: string[], stdinPayload?: unknown): Promise<T> {
     const child = this.spawnImpl(this.resolved.transport.command, commandArgs, {
       env: {
@@ -197,37 +175,37 @@ export class CliSherpaBackend implements SherpaBackend {
   }
 
   ingest(event: SherpaEventInput) {
-    return this.runJson<SherpaEvent>([...this.sharedArgs(), "ingest"], event);
+    return this.runJson<SherpaEvent>([...buildCliSharedArgs(this.resolved), "ingest"], event);
   }
 
   ingestBatch(events: SherpaEventInput[]) {
-    return this.runJson<SherpaEvent[]>([...this.sharedArgs(), "ingest-batch"], events);
+    return this.runJson<SherpaEvent[]>([...buildCliSharedArgs(this.resolved), "ingest-batch"], events);
   }
 
   async rebuild() {
-    await this.runJson<WorkflowStatusResult>([...this.sharedArgs(), "rebuild"]);
+    await this.runJson<WorkflowStatusResult>([...buildCliSharedArgs(this.resolved), "rebuild"]);
   }
 
   status() {
-    return this.runJson<WorkflowStatusResult>([...this.sharedArgs(), "status"]);
+    return this.runJson<WorkflowStatusResult>([...buildCliSharedArgs(this.resolved), "status"]);
   }
 
   doctor() {
-    return this.runJson<DoctorResult>([...this.sharedArgs(), "doctor"]);
+    return this.runJson<DoctorResult>([...buildCliSharedArgs(this.resolved), "doctor"]);
   }
 
   exportSnapshot() {
-    return this.runJson<ExportResult>([...this.sharedArgs(), "export"]);
+    return this.runJson<ExportResult>([...buildCliSharedArgs(this.resolved), "export"]);
   }
 
   gc() {
-    return this.runJson<GcResult>([...this.sharedArgs(), "gc"]);
+    return this.runJson<GcResult>([...buildCliSharedArgs(this.resolved), "gc"]);
   }
 
   workflowState(caseId: string, maxOrder?: number) {
     return this.runJson<WorkflowStateResult>(
       [
-        ...this.sharedArgs(),
+        ...buildCliSharedArgs(this.resolved),
         "workflow-state",
         "--case-id",
         caseId,
@@ -239,7 +217,7 @@ export class CliSherpaBackend implements SherpaBackend {
   workflowNext(caseId: string, limit?: number) {
     return this.runJson<WorkflowNextResult>(
       [
-        ...this.sharedArgs(),
+        ...buildCliSharedArgs(this.resolved),
         "workflow-next",
         "--case-id",
         caseId,
@@ -251,7 +229,7 @@ export class CliSherpaBackend implements SherpaBackend {
   workflowRisks(caseId: string, limit?: number) {
     return this.runJson<WorkflowRisksResult>(
       [
-        ...this.sharedArgs(),
+        ...buildCliSharedArgs(this.resolved),
         "workflow-risks",
         "--case-id",
         caseId,
@@ -263,7 +241,7 @@ export class CliSherpaBackend implements SherpaBackend {
   workflowRecall(caseId: string, mode?: WorkflowRecallMode, limit?: number) {
     return this.runJson<WorkflowRecallResult>(
       [
-        ...this.sharedArgs(),
+        ...buildCliSharedArgs(this.resolved),
         "workflow-recall",
         "--case-id",
         caseId,
@@ -272,6 +250,28 @@ export class CliSherpaBackend implements SherpaBackend {
       ]
     );
   }
+}
+
+export function buildCliSharedArgs(resolved: ResolvedSherpaPluginConfig) {
+  const args = [...resolved.transport.args, "--root", resolved.storeRoot];
+
+  if (resolved.engine.defaultOrder !== undefined) {
+    args.push("--default-order", String(resolved.engine.defaultOrder));
+  }
+
+  if (resolved.engine.minOrder !== undefined) {
+    args.push("--min-order", String(resolved.engine.minOrder));
+  }
+
+  if (resolved.engine.maxOrder !== undefined) {
+    args.push("--max-order", String(resolved.engine.maxOrder));
+  }
+
+  if (resolved.engine.minSupport !== undefined) {
+    args.push("--min-support", String(resolved.engine.minSupport));
+  }
+
+  return args;
 }
 
 export class HttpSherpaBackend implements SherpaBackend {

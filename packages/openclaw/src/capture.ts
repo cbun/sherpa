@@ -3,6 +3,10 @@ import { resolveAgentIdFromSessionKey } from "openclaw/plugin-sdk/routing";
 
 import type { ResolvedSherpaPluginConfig } from "./config.js";
 
+type CaptureEventOptions = {
+  caseId?: string | undefined;
+};
+
 type SessionCaptureInput = {
   sessionId: string;
   sessionKey?: string;
@@ -196,14 +200,15 @@ function buildToolLabels(toolName: string, family: ToolFamily) {
 
 export function buildSessionStartEvent(
   config: ResolvedSherpaPluginConfig,
-  input: SessionCaptureInput
+  input: SessionCaptureInput,
+  options?: CaptureEventOptions
 ): SherpaEventInput {
   const agentId = resolveAgentId(input);
   const type = input.resumedFrom ? "session.resumed" : "session.started";
 
   return {
     agentId,
-    caseId: buildSessionCaseId(input),
+    caseId: options?.caseId ?? buildSessionCaseId(input),
     source: "openclaw.session",
     type,
     actor: "system",
@@ -222,13 +227,14 @@ export function buildSessionStartEvent(
 
 export function buildSessionEndEvent(
   config: ResolvedSherpaPluginConfig,
-  input: SessionEndCaptureInput
+  input: SessionEndCaptureInput,
+  options?: CaptureEventOptions
 ): SherpaEventInput {
   const agentId = resolveAgentId(input);
 
   return {
     agentId,
-    caseId: buildSessionCaseId(input),
+    caseId: options?.caseId ?? buildSessionCaseId(input),
     source: "openclaw.session",
     type: "session.ended",
     actor: "system",
@@ -249,7 +255,8 @@ export function buildSessionEndEvent(
 
 export function buildDispatchEvent(
   config: ResolvedSherpaPluginConfig,
-  input: DispatchCaptureInput
+  input: DispatchCaptureInput,
+  options?: CaptureEventOptions
 ): SherpaEventInput | null {
   if (!config.capture.messages) {
     return null;
@@ -273,7 +280,7 @@ export function buildDispatchEvent(
 
   return {
     agentId,
-    caseId,
+    caseId: options?.caseId ?? caseId,
     ts: typeof input.timestamp === "number" ? new Date(input.timestamp).toISOString() : undefined,
     source: "openclaw.dispatch",
     type: "message.received",
@@ -289,7 +296,8 @@ export function buildDispatchEvent(
 
 export function buildToolStartEvent(
   config: ResolvedSherpaPluginConfig,
-  input: ToolStartCaptureInput
+  input: ToolStartCaptureInput,
+  options?: CaptureEventOptions
 ): SherpaEventInput | null {
   const family = classifyToolFamily(input.toolName);
   if (!captureEnabledForTool(config, family)) {
@@ -300,7 +308,7 @@ export function buildToolStartEvent(
 
   return {
     agentId,
-    caseId: buildSessionCaseId(input),
+    caseId: options?.caseId ?? buildSessionCaseId(input),
     source: `openclaw.${family}`,
     type: buildToolType(family, "started"),
     actor: "agent",
@@ -315,7 +323,8 @@ export function buildToolStartEvent(
 
 export function buildToolFinishEvent(
   config: ResolvedSherpaPluginConfig,
-  input: ToolFinishCaptureInput
+  input: ToolFinishCaptureInput,
+  options?: CaptureEventOptions
 ): SherpaEventInput | null {
   const family = classifyToolFamily(input.toolName);
   if (!captureEnabledForTool(config, family)) {
@@ -327,7 +336,7 @@ export function buildToolFinishEvent(
 
   return {
     agentId,
-    caseId: buildSessionCaseId(input),
+    caseId: options?.caseId ?? buildSessionCaseId(input),
     source: `openclaw.${family}`,
     type: buildToolType(family, succeeded ? "succeeded" : "failed"),
     actor: "agent",

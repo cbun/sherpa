@@ -58,6 +58,48 @@
           "rebuildOnVersionChange": { "type": "boolean", "default": false }
         }
       },
+      "scope": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "default": { "type": "string", "enum": ["allow", "deny"], "default": "deny" },
+          "rules": {
+            "type": "array",
+            "default": [
+              { "action": "allow", "match": { "chatType": "direct" } }
+            ],
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "action": { "type": "string", "enum": ["allow", "deny"] },
+                "match": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "chatType": { "type": "string", "enum": ["direct", "group", "channel", "dm"] },
+                    "channel": { "type": "string" },
+                    "sessionPrefix": { "type": "string" },
+                    "rawSessionPrefix": { "type": "string" },
+                    "agentId": { "type": "string" }
+                  }
+                }
+              },
+              "required": ["action"]
+            }
+          }
+        }
+      },
+      "ignoreSessionPatterns": {
+        "type": "array",
+        "items": { "type": "string" },
+        "default": ["agent:*:cron:**"]
+      },
+      "statelessSessionPatterns": {
+        "type": "array",
+        "items": { "type": "string" },
+        "default": []
+      },
       "capture": {
         "type": "object",
         "additionalProperties": false,
@@ -109,6 +151,18 @@
     },
     "update.debounceMs": {
       "label": "Capture Debounce"
+    },
+    "scope.default": {
+      "label": "Scope Default"
+    },
+    "scope.rules": {
+      "label": "Scope Rules"
+    },
+    "ignoreSessionPatterns": {
+      "label": "Ignore Sessions"
+    },
+    "statelessSessionPatterns": {
+      "label": "Stateless Sessions"
     },
     "capture.messages": {
       "label": "Capture Messages"

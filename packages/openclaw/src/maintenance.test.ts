@@ -43,7 +43,20 @@ function createResolved(storeRoot: string): ResolvedSherpaPluginConfig {
       debounceMs: 25,
       commandTimeoutMs: 3000,
       rebuildOnVersionChange: false
-    }
+    },
+    scope: {
+      defaultAction: "deny",
+      rules: [
+        {
+          action: "allow",
+          match: {
+            chatType: "direct"
+          }
+        }
+      ]
+    },
+    ignoreSessionPatterns: [],
+    statelessSessionPatterns: []
   };
 }
 

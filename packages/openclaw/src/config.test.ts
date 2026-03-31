@@ -37,6 +37,15 @@ describe("resolveSherpaPluginConfig", () => {
       commandTimeoutMs: 3000,
       rebuildOnVersionChange: false
     });
+    expect(resolved.scope).toMatchObject({
+      defaultAction: "deny",
+      rules: [
+        { action: "allow", match: { chatType: "direct" } },
+        { action: "allow", match: { chatType: "dm" } }
+      ]
+    });
+    expect(resolved.ignoreSessionPatterns).toEqual(["agent:*:cron:**"]);
+    expect(resolved.statelessSessionPatterns).toEqual([]);
     expect(resolved.advisory.enabled).toBe(false);
   });
 
@@ -69,7 +78,20 @@ describe("resolveSherpaPluginConfig", () => {
           debounceMs: 250,
           commandTimeoutMs: 1500,
           rebuildOnVersionChange: true
-        }
+        },
+        scope: {
+          default: "allow",
+          rules: [
+            {
+              action: "deny",
+              match: {
+                channel: "discord"
+              }
+            }
+          ]
+        },
+        ignoreSessionPatterns: ["agent:beta:slack:**"],
+        statelessSessionPatterns: ["agent:beta:discord:**"]
       },
       { agentId: "beta" }
     );
@@ -101,5 +123,18 @@ describe("resolveSherpaPluginConfig", () => {
       commandTimeoutMs: 1500,
       rebuildOnVersionChange: true
     });
+    expect(resolved.scope).toMatchObject({
+      defaultAction: "allow",
+      rules: [
+        {
+          action: "deny",
+          match: {
+            channel: "discord"
+          }
+        }
+      ]
+    });
+    expect(resolved.ignoreSessionPatterns).toEqual(["agent:beta:slack:**"]);
+    expect(resolved.statelessSessionPatterns).toEqual(["agent:beta:discord:**"]);
   });
 });

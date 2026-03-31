@@ -32,6 +32,21 @@ export interface SherpaPluginConfig {
     commandTimeoutMs?: number;
     rebuildOnVersionChange?: boolean;
   };
+  scope?: {
+    default?: "allow" | "deny";
+    rules?: Array<{
+      action: "allow" | "deny";
+      match?: {
+        chatType?: "direct" | "group" | "channel" | "dm";
+        channel?: string;
+        sessionPrefix?: string;
+        rawSessionPrefix?: string;
+        agentId?: string;
+      };
+    }>;
+  };
+  ignoreSessionPatterns?: string[];
+  statelessSessionPatterns?: string[];
   capture?: {
     messages?: boolean;
     tools?: boolean;
@@ -72,6 +87,21 @@ export interface ResolvedSherpaPluginConfig {
     commandTimeoutMs: number;
     rebuildOnVersionChange: boolean;
   };
+  scope: {
+    defaultAction: "allow" | "deny";
+    rules: Array<{
+      action: "allow" | "deny";
+      match: {
+        chatType?: "direct" | "group" | "channel" | "dm";
+        channel?: string;
+        sessionPrefix?: string;
+        rawSessionPrefix?: string;
+        agentId?: string;
+      };
+    }>;
+  };
+  ignoreSessionPatterns: string[];
+  statelessSessionPatterns: string[];
 }
 
 function expandHomeDir(value: string) {
@@ -153,6 +183,35 @@ export function resolveSherpaPluginConfig(
       debounceMs: config?.update?.debounceMs ?? 10_000,
       commandTimeoutMs: config?.update?.commandTimeoutMs ?? 3_000,
       rebuildOnVersionChange: config?.update?.rebuildOnVersionChange ?? false
-    }
+    },
+    scope: {
+      defaultAction: config?.scope?.default ?? "deny",
+      rules:
+        config?.scope?.rules?.map((rule) => ({
+          action: rule.action,
+          match: {
+            ...(rule.match?.chatType ? { chatType: rule.match.chatType } : {}),
+            ...(rule.match?.channel ? { channel: rule.match.channel } : {}),
+            ...(rule.match?.sessionPrefix ? { sessionPrefix: rule.match.sessionPrefix } : {}),
+            ...(rule.match?.rawSessionPrefix ? { rawSessionPrefix: rule.match.rawSessionPrefix } : {}),
+            ...(rule.match?.agentId ? { agentId: rule.match.agentId } : {})
+          }
+        })) ?? [
+          {
+            action: "allow",
+            match: {
+              chatType: "direct"
+            }
+          },
+          {
+            action: "allow",
+            match: {
+              chatType: "dm"
+            }
+          }
+        ]
+    },
+    ignoreSessionPatterns: config?.ignoreSessionPatterns ?? ["agent:*:cron:**"],
+    statelessSessionPatterns: config?.statelessSessionPatterns ?? []
   };
 }

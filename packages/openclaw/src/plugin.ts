@@ -10,8 +10,10 @@ import {
   buildToolFinishEvent,
   buildToolStartEvent
 } from "./capture.js";
+import { buildSherpaAdvisory } from "./advisory.js";
 import { resolveSherpaPluginConfig, type SherpaPluginConfig } from "./config.js";
 import { createSherpaMaintenanceRuntime } from "./maintenance.js";
+import { buildStatelessCaseId, resolveSherpaPolicyDecision } from "./policy.js";
 
 function detectAgentId(params: { agentId?: string | undefined; caseId?: string | undefined }) {
   if (params.agentId) {
@@ -75,6 +77,43 @@ function enqueueCapture(
   maintenance.enqueueCapture(runtime, event);
 }
 
+function unavailableResult(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+
+  return jsonResult({
+    backend: "sherpa",
+    ok: false,
+    error: {
+      code: "backend_unavailable",
+      message
+    }
+  });
+}
+
+function resolveCaptureCaseId(
+  decision: ReturnType<typeof resolveSherpaPolicyDecision>,
+  params: {
+    sessionId?: string | undefined;
+    sessionKey?: string | undefined;
+    runId?: string | undefined;
+    toolCallId?: string | undefined;
+    timestamp?: number | undefined;
+  }
+) {
+  if (!decision.stateless) {
+    return undefined;
+  }
+
+  return buildStatelessCaseId({
+    policy: decision,
+    sessionId: params.sessionId,
+    sessionKey: params.sessionKey,
+    runId: params.runId,
+    toolCallId: params.toolCallId,
+    timestamp: params.timestamp
+  });
+}
+
 export default definePluginEntry({
   id: "sherpa",
   name: "Sherpa",
@@ -114,17 +153,54 @@ export default definePluginEntry({
     });
 
     api.on("session_start", (event, ctx) => {
+      const decision = resolveSherpaPolicyDecision(baseResolved, {
+        agentId: ctx.agentId,
+        sessionKey: ctx.sessionKey
+      });
+      if (!decision.allowed) {
+        return;
+      }
+
       const runtime = resolveRuntime(pluginConfig, ctx);
-      enqueueCapture(maintenance, runtime, buildSessionStartEvent(runtime.resolved, { ...event, ...ctx }));
+      enqueueCapture(
+        maintenance,
+        runtime,
+        buildSessionStartEvent(runtime.resolved, { ...event, ...ctx }, { caseId: resolveCaptureCaseId(decision, { ...event, ...ctx }) })
+      );
     });
 
     api.on("session_end", (event, ctx) => {
+      const decision = resolveSherpaPolicyDecision(baseResolved, {
+        agentId: ctx.agentId,
+        sessionKey: ctx.sessionKey
+      });
+      if (!decision.allowed) {
+        return;
+      }
+
       const runtime = resolveRuntime(pluginConfig, ctx);
-      enqueueCapture(maintenance, runtime, buildSessionEndEvent(runtime.resolved, { ...event, ...ctx }));
+      enqueueCapture(
+        maintenance,
+        runtime,
+        buildSessionEndEvent(runtime.resolved, { ...event, ...ctx }, { caseId: resolveCaptureCaseId(decision, { ...event, ...ctx }) })
+      );
     });
 
     api.on("before_dispatch", (event, ctx) => {
-      const eventRecord = buildDispatchEvent(baseResolved, { ...event, ...ctx });
+      const decision = resolveSherpaPolicyDecision(baseResolved, {
+        sessionKey: ctx.sessionKey,
+        channel: event.channel,
+        isGroup: event.isGroup
+      });
+      if (!decision.allowed) {
+        return;
+      }
+
+      const eventRecord = buildDispatchEvent(
+        baseResolved,
+        { ...event, ...ctx },
+        { caseId: resolveCaptureCaseId(decision, { ...event, ...ctx }) }
+      );
       if (!eventRecord) {
         return;
       }
@@ -134,13 +210,89 @@ export default definePluginEntry({
     });
 
     api.on("before_tool_call", (event, ctx) => {
+      const decision = resolveSherpaPolicyDecision(baseResolved, {
+        agentId: ctx.agentId,
+        sessionKey: ctx.sessionKey
+      });
+      if (!decision.allowed) {
+        return;
+      }
+
       const runtime = resolveRuntime(pluginConfig, ctx);
-      enqueueCapture(maintenance, runtime, buildToolStartEvent(runtime.resolved, { ...event, ...ctx }));
+      enqueueCapture(
+        maintenance,
+        runtime,
+        buildToolStartEvent(runtime.resolved, { ...event, ...ctx }, { caseId: resolveCaptureCaseId(decision, { ...event, ...ctx }) })
+      );
+    });
+
+    api.on("before_prompt_build", async (_event, ctx) => {
+      const decision = resolveSherpaPolicyDecision(baseResolved, {
+        agentId: ctx.agentId,
+        sessionKey: ctx.sessionKey,
+        channel: ctx.channelId
+      });
+      if (!decision.allowed || !baseResolved.advisory.enabled || !ctx.sessionKey) {
+        return;
+      }
+
+      if (ctx.trigger && ctx.trigger !== "user") {
+        return;
+      }
+
+      const caseId =
+        resolveCaptureCaseId(decision, {
+          sessionId: ctx.sessionId,
+          sessionKey: ctx.sessionKey,
+          runId: ctx.runId
+        }) ?? `session:${ctx.sessionKey}`;
+
+      try {
+        const engine = createEngine(pluginConfig, {
+          agentId: decision.agentId,
+          caseId
+        });
+        const [state, next, risks] = await Promise.all([
+          engine.workflowState(caseId),
+          engine.workflowNext(caseId, baseResolved.advisory.maxCandidates),
+          engine.workflowRisks(caseId, baseResolved.advisory.maxRisks)
+        ]);
+        const advisory = buildSherpaAdvisory({
+          config: baseResolved,
+          state,
+          next,
+          risks
+        });
+
+        if (!advisory) {
+          return;
+        }
+
+        return {
+          prependContext: advisory
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        api.logger.warn(`Sherpa advisory skipped: ${message}`);
+        return;
+      }
     });
 
     api.on("after_tool_call", (event, ctx) => {
+      const decision = resolveSherpaPolicyDecision(baseResolved, {
+        agentId: ctx.agentId,
+        sessionKey: ctx.sessionKey
+      });
+      if (!decision.allowed) {
+        return;
+      }
+
       const runtime = resolveRuntime(pluginConfig, ctx);
-      enqueueCapture(maintenance, runtime, buildToolFinishEvent(runtime.resolved, { ...event, ...ctx }));
+      enqueueCapture(
+        maintenance,
+        runtime,
+        buildToolFinishEvent(runtime.resolved, { ...event, ...ctx }, { caseId: resolveCaptureCaseId(decision, { ...event, ...ctx }) })
+      );
     });
 
     api.registerTool({
@@ -153,8 +305,12 @@ export default definePluginEntry({
         maxOrder: Type.Optional(Type.Integer({ minimum: 1 }))
       }),
       async execute(_id, params) {
-        const engine = createEngine(pluginConfig, params);
-        return jsonResult(await engine.workflowState(params.caseId, params.maxOrder));
+        try {
+          const engine = createEngine(pluginConfig, params);
+          return jsonResult(await engine.workflowState(params.caseId, params.maxOrder));
+        } catch (error) {
+          return unavailableResult(error);
+        }
       }
     });
 
@@ -168,8 +324,12 @@ export default definePluginEntry({
         limit: Type.Optional(Type.Integer({ minimum: 1 }))
       }),
       async execute(_id, params) {
-        const engine = createEngine(pluginConfig, params);
-        return jsonResult(await engine.workflowNext(params.caseId, params.limit ?? 5));
+        try {
+          const engine = createEngine(pluginConfig, params);
+          return jsonResult(await engine.workflowNext(params.caseId, params.limit ?? 5));
+        } catch (error) {
+          return unavailableResult(error);
+        }
       }
     });
 
@@ -183,8 +343,12 @@ export default definePluginEntry({
         limit: Type.Optional(Type.Integer({ minimum: 1 }))
       }),
       async execute(_id, params) {
-        const engine = createEngine(pluginConfig, params);
-        return jsonResult(await engine.workflowRisks(params.caseId, params.limit ?? 3));
+        try {
+          const engine = createEngine(pluginConfig, params);
+          return jsonResult(await engine.workflowRisks(params.caseId, params.limit ?? 3));
+        } catch (error) {
+          return unavailableResult(error);
+        }
       }
     });
 
@@ -199,8 +363,12 @@ export default definePluginEntry({
         limit: Type.Optional(Type.Integer({ minimum: 1 }))
       }),
       async execute(_id, params) {
-        const engine = createEngine(pluginConfig, params);
-        return jsonResult(await engine.workflowRecall(params.caseId, params.mode ?? "successful", params.limit ?? 3));
+        try {
+          const engine = createEngine(pluginConfig, params);
+          return jsonResult(await engine.workflowRecall(params.caseId, params.mode ?? "successful", params.limit ?? 3));
+        } catch (error) {
+          return unavailableResult(error);
+        }
       }
     });
 
@@ -212,8 +380,16 @@ export default definePluginEntry({
         agentId: Type.Optional(Type.String())
       }),
       async execute(_id, params) {
-        const engine = createEngine(pluginConfig, params);
-        return jsonResult(await engine.status());
+        try {
+          const engine = createEngine(pluginConfig, params);
+          const status = await engine.status();
+          return jsonResult({
+            ...status,
+            advisoryEnabled: baseResolved.advisory.enabled
+          });
+        } catch (error) {
+          return unavailableResult(error);
+        }
       }
     });
 
@@ -240,8 +416,12 @@ export default definePluginEntry({
           })
         }),
         async execute(_id, params) {
-          const engine = createEngine(pluginConfig, params.event);
-          return jsonResult(await engine.ingest(params.event as SherpaEventInput));
+          try {
+            const engine = createEngine(pluginConfig, params.event);
+            return jsonResult(await engine.ingest(params.event as SherpaEventInput));
+          } catch (error) {
+            return unavailableResult(error);
+          }
         }
       },
       { optional: true }

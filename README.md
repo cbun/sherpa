@@ -10,7 +10,7 @@ Sherpa now has an alpha implementation:
 
 - `@sherpa/core`: append-only ledger, batched ingest, derived SQLite graph, and retrieval primitives
 - `sherpa`: CLI for ingest, rebuild, status, workflow-status, doctor, export, gc, workflow state, workflow next, workflow risks, and workflow recall
-- `@sherpa/openclaw`: native OpenClaw plugin package with manifest, config schema, lifecycle event capture, scope controls, maintenance, and native tool registration over the core engine
+- `@sherpa/openclaw`: native OpenClaw plugin package with manifest, config schema, lifecycle event capture, explicit task-boundary case splitting, scope controls, maintenance, and native tool registration over the core engine
 
 The product requirements document remains the product source of truth at [`prd/sherpa-prd.md`](./prd/sherpa-prd.md).
 
@@ -85,8 +85,8 @@ node packages/cli/dist/index.js --root ./.sherpa workflow-recall --case-id case-
 - The current implementation rebuilds the derived graph from the ledger on each ingest or ingest batch. That keeps the source of truth simple now; incremental updates can come later.
 - The engine now supports minimum-support variable-order backoff, richer status/freshness reporting, JSON snapshot export, and graph maintenance via `gc`.
 - Risk and recall are still alpha-grade heuristics built from eventual case outcomes and suffix matching; they are useful now, but not yet the final retrieval model described in the PRD.
-- The OpenClaw package now captures session lifecycle, inbound dispatch, and tool lifecycle events with redacted-by-default metadata, debounced per-store batching, periodic maintenance, conservative scope rules, ignore/stateless session patterns, optional bounded advisory injection, and structured degraded responses when the backend is unavailable.
-- Richer explicit task-boundary case splitting is still to come.
+- The OpenClaw package now captures session lifecycle, inbound dispatch, and tool lifecycle events with redacted-by-default metadata, debounced per-store batching, periodic maintenance, conservative scope rules, ignore/stateless session patterns, explicit task-boundary case splitting from configurable markers, optional bounded advisory injection, and structured degraded responses when the backend is unavailable.
+- Richer automatic case splitting beyond explicit boundaries is still to come.
 
 ## Research Direction
 
@@ -124,7 +124,7 @@ That leads to a few practical implementation rules:
 
 ## Next Steps
 
-- Add OpenClaw richer explicit task-boundary case splitting
+- Add OpenClaw richer automatic case splitting beyond explicit boundaries
 - Add MCP and SDK surfaces for the standalone core
 - Improve recall/risk scoring beyond the current heuristic layer
 - Define a validation harness using synthetic workflow traces and real event-log datasets

@@ -56,7 +56,11 @@ function createResolved(storeRoot: string): ResolvedSherpaPluginConfig {
       ]
     },
     ignoreSessionPatterns: [],
-    statelessSessionPatterns: []
+    statelessSessionPatterns: [],
+    caseSplitting: {
+      enabled: true,
+      markers: ["/new", "/task", "task:", "case:"]
+    }
   };
 }
 

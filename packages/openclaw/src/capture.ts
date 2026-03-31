@@ -46,6 +46,15 @@ type ToolFinishCaptureInput = ToolStartCaptureInput & {
 
 type ToolFamily = "tool" | "browser" | "web" | "automation";
 
+type TaskStartCaptureInput = {
+  agentId?: string | undefined;
+  sessionId?: string | undefined;
+  sessionKey?: string | undefined;
+  title: string;
+  slug: string;
+  timestamp?: number | undefined;
+};
+
 function normalizeOpaqueId(value: string | undefined | null) {
   return (value ?? "")
     .trim()
@@ -58,7 +67,7 @@ function safeString(value: string | undefined | null) {
   return normalized.length > 0 ? normalized : null;
 }
 
-function resolveAgentId(params: { agentId?: string; sessionKey?: string }) {
+function resolveAgentId(params: { agentId?: string | undefined; sessionKey?: string | undefined }) {
   const agentId = safeString(params.agentId);
   if (agentId) {
     return agentId;
@@ -73,9 +82,9 @@ function resolveAgentId(params: { agentId?: string; sessionKey?: string }) {
 }
 
 function buildSessionCaseId(params: {
-  agentId?: string;
-  sessionId?: string;
-  sessionKey?: string;
+  agentId?: string | undefined;
+  sessionId?: string | undefined;
+  sessionKey?: string | undefined;
 }) {
   const sessionKey = safeString(params.sessionKey);
   if (sessionKey) {
@@ -291,6 +300,36 @@ export function buildDispatchEvent(
       contentChars: input.content.length
     },
     meta: buildMessageMeta(config, input, agentId)
+  };
+}
+
+export function buildTaskStartEvent(
+  config: ResolvedSherpaPluginConfig,
+  input: TaskStartCaptureInput,
+  options?: CaptureEventOptions
+): SherpaEventInput {
+  const agentId = resolveAgentId(input);
+
+  return {
+    agentId,
+    caseId: options?.caseId ?? buildSessionCaseId(input),
+    ts: typeof input.timestamp === "number" ? new Date(input.timestamp).toISOString() : undefined,
+    source: "openclaw.task",
+    type: "task.started",
+    actor: "user",
+    outcome: "unknown",
+    labels: [`task:${input.slug}`],
+    metrics: {
+      titleChars: input.title.length
+    },
+    meta: clampMeta(
+      {
+        sessionId: safeString(input.sessionId),
+        sessionKey: safeString(input.sessionKey),
+        ...(config.ledger.redactRawText ? {} : { title: input.title })
+      },
+      config.ledger.maxMetaBytes
+    )
   };
 }
 

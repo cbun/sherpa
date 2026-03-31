@@ -46,6 +46,10 @@ describe("resolveSherpaPluginConfig", () => {
     });
     expect(resolved.ignoreSessionPatterns).toEqual(["agent:*:cron:**"]);
     expect(resolved.statelessSessionPatterns).toEqual([]);
+    expect(resolved.caseSplitting).toEqual({
+      enabled: true,
+      markers: ["/new", "/task", "task:", "case:"]
+    });
     expect(resolved.advisory.enabled).toBe(false);
   });
 
@@ -91,7 +95,11 @@ describe("resolveSherpaPluginConfig", () => {
           ]
         },
         ignoreSessionPatterns: ["agent:beta:slack:**"],
-        statelessSessionPatterns: ["agent:beta:discord:**"]
+        statelessSessionPatterns: ["agent:beta:discord:**"],
+        caseSplitting: {
+          enabled: false,
+          markers: ["/focus", "ticket:"]
+        }
       },
       { agentId: "beta" }
     );
@@ -136,5 +144,9 @@ describe("resolveSherpaPluginConfig", () => {
     });
     expect(resolved.ignoreSessionPatterns).toEqual(["agent:beta:slack:**"]);
     expect(resolved.statelessSessionPatterns).toEqual(["agent:beta:discord:**"]);
+    expect(resolved.caseSplitting).toEqual({
+      enabled: false,
+      markers: ["/focus", "ticket:"]
+    });
   });
 });

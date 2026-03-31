@@ -47,6 +47,10 @@ export interface SherpaPluginConfig {
   };
   ignoreSessionPatterns?: string[];
   statelessSessionPatterns?: string[];
+  caseSplitting?: {
+    enabled?: boolean;
+    markers?: string[];
+  };
   capture?: {
     messages?: boolean;
     tools?: boolean;
@@ -102,6 +106,10 @@ export interface ResolvedSherpaPluginConfig {
   };
   ignoreSessionPatterns: string[];
   statelessSessionPatterns: string[];
+  caseSplitting: {
+    enabled: boolean;
+    markers: string[];
+  };
 }
 
 function expandHomeDir(value: string) {
@@ -212,6 +220,10 @@ export function resolveSherpaPluginConfig(
         ]
     },
     ignoreSessionPatterns: config?.ignoreSessionPatterns ?? ["agent:*:cron:**"],
-    statelessSessionPatterns: config?.statelessSessionPatterns ?? []
+    statelessSessionPatterns: config?.statelessSessionPatterns ?? [],
+    caseSplitting: {
+      enabled: config?.caseSplitting?.enabled ?? true,
+      markers: config?.caseSplitting?.markers ?? ["/new", "/task", "task:", "case:"]
+    }
   };
 }

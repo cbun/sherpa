@@ -100,6 +100,18 @@
         "items": { "type": "string" },
         "default": []
       },
+      "caseSplitting": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "enabled": { "type": "boolean", "default": true },
+          "markers": {
+            "type": "array",
+            "items": { "type": "string" },
+            "default": ["/new", "/task", "task:", "case:"]
+          }
+        }
+      },
       "capture": {
         "type": "object",
         "additionalProperties": false,
@@ -163,6 +175,12 @@
     },
     "statelessSessionPatterns": {
       "label": "Stateless Sessions"
+    },
+    "caseSplitting.enabled": {
+      "label": "Enable Case Splitting"
+    },
+    "caseSplitting.markers": {
+      "label": "Case Split Markers"
     },
     "capture.messages": {
       "label": "Capture Messages"

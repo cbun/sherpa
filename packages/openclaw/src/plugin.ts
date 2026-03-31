@@ -7,10 +7,12 @@ import {
   buildDispatchEvent,
   buildSessionEndEvent,
   buildSessionStartEvent,
+  buildTaskStartEvent,
   buildToolFinishEvent,
   buildToolStartEvent
 } from "./capture.js";
 import { buildSherpaAdvisory } from "./advisory.js";
+import { SherpaCaseRouter } from "./cases.js";
 import { resolveSherpaPluginConfig, type SherpaPluginConfig } from "./config.js";
 import { createSherpaMaintenanceRuntime } from "./maintenance.js";
 import { buildStatelessCaseId, resolveSherpaPolicyDecision } from "./policy.js";
@@ -121,6 +123,7 @@ export default definePluginEntry({
   register(api) {
     const pluginConfig = (api.config?.plugins?.entries?.sherpa?.config ?? {}) as SherpaPluginConfig;
     const baseResolved = resolveSherpaPluginConfig(pluginConfig);
+    const caseRouter = new SherpaCaseRouter(baseResolved);
     const maintenance = createSherpaMaintenanceRuntime({
       logger: api.logger,
       listRuntimes: () =>
@@ -162,10 +165,16 @@ export default definePluginEntry({
       }
 
       const runtime = resolveRuntime(pluginConfig, ctx);
+      const caseId =
+        caseRouter.resolveActiveCaseId({
+          policy: decision,
+          sessionId: event.sessionId,
+          sessionKey: ctx.sessionKey
+        }) ?? resolveCaptureCaseId(decision, { ...event, ...ctx });
       enqueueCapture(
         maintenance,
         runtime,
-        buildSessionStartEvent(runtime.resolved, { ...event, ...ctx }, { caseId: resolveCaptureCaseId(decision, { ...event, ...ctx }) })
+        buildSessionStartEvent(runtime.resolved, { ...event, ...ctx }, { caseId })
       );
     });
 
@@ -179,11 +188,18 @@ export default definePluginEntry({
       }
 
       const runtime = resolveRuntime(pluginConfig, ctx);
+      const caseId =
+        caseRouter.resolveActiveCaseId({
+          policy: decision,
+          sessionId: event.sessionId,
+          sessionKey: ctx.sessionKey
+        }) ?? resolveCaptureCaseId(decision, { ...event, ...ctx });
       enqueueCapture(
         maintenance,
         runtime,
-        buildSessionEndEvent(runtime.resolved, { ...event, ...ctx }, { caseId: resolveCaptureCaseId(decision, { ...event, ...ctx }) })
+        buildSessionEndEvent(runtime.resolved, { ...event, ...ctx }, { caseId })
       );
+      caseRouter.clearSession(ctx.sessionKey);
     });
 
     api.on("before_dispatch", (event, ctx) => {
@@ -196,10 +212,48 @@ export default definePluginEntry({
         return;
       }
 
+      const boundary = caseRouter.startTaskBoundary({
+        policy: decision,
+        sessionKey: ctx.sessionKey,
+        content: event.content,
+        timestamp: event.timestamp
+      });
+
+      if (boundary) {
+        const taskRuntime = resolveRuntime(pluginConfig, {
+          agentId: decision.agentId,
+          caseId: boundary.caseId
+        });
+        enqueueCapture(
+          maintenance,
+          taskRuntime,
+          buildTaskStartEvent(
+            taskRuntime.resolved,
+            {
+              agentId: decision.agentId,
+              sessionKey: ctx.sessionKey,
+              title: boundary.title,
+              slug: boundary.slug,
+              timestamp: event.timestamp
+            },
+            { caseId: boundary.caseId }
+          )
+        );
+      }
+
+      const activeCaseId =
+        boundary?.caseId ??
+        caseRouter.resolveActiveCaseId({
+          policy: decision,
+          sessionKey: ctx.sessionKey,
+          timestamp: event.timestamp
+        }) ??
+        resolveCaptureCaseId(decision, { ...event, ...ctx });
+
       const eventRecord = buildDispatchEvent(
         baseResolved,
         { ...event, ...ctx },
-        { caseId: resolveCaptureCaseId(decision, { ...event, ...ctx }) }
+        { caseId: activeCaseId }
       );
       if (!eventRecord) {
         return;
@@ -219,10 +273,18 @@ export default definePluginEntry({
       }
 
       const runtime = resolveRuntime(pluginConfig, ctx);
+      const caseId =
+        caseRouter.resolveActiveCaseId({
+          policy: decision,
+          sessionId: ctx.sessionId,
+          sessionKey: ctx.sessionKey,
+          runId: ctx.runId,
+          toolCallId: ctx.toolCallId
+        }) ?? resolveCaptureCaseId(decision, { ...event, ...ctx });
       enqueueCapture(
         maintenance,
         runtime,
-        buildToolStartEvent(runtime.resolved, { ...event, ...ctx }, { caseId: resolveCaptureCaseId(decision, { ...event, ...ctx }) })
+        buildToolStartEvent(runtime.resolved, { ...event, ...ctx }, { caseId })
       );
     });
 
@@ -241,6 +303,12 @@ export default definePluginEntry({
       }
 
       const caseId =
+        caseRouter.resolveActiveCaseId({
+          policy: decision,
+          sessionId: ctx.sessionId,
+          sessionKey: ctx.sessionKey,
+          runId: ctx.runId
+        }) ??
         resolveCaptureCaseId(decision, {
           sessionId: ctx.sessionId,
           sessionKey: ctx.sessionKey,
@@ -288,10 +356,18 @@ export default definePluginEntry({
       }
 
       const runtime = resolveRuntime(pluginConfig, ctx);
+      const caseId =
+        caseRouter.resolveActiveCaseId({
+          policy: decision,
+          sessionId: ctx.sessionId,
+          sessionKey: ctx.sessionKey,
+          runId: ctx.runId,
+          toolCallId: ctx.toolCallId
+        }) ?? resolveCaptureCaseId(decision, { ...event, ...ctx });
       enqueueCapture(
         maintenance,
         runtime,
-        buildToolFinishEvent(runtime.resolved, { ...event, ...ctx }, { caseId: resolveCaptureCaseId(decision, { ...event, ...ctx }) })
+        buildToolFinishEvent(runtime.resolved, { ...event, ...ctx }, { caseId })
       );
     });
 

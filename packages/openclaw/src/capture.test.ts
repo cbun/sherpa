@@ -117,4 +117,63 @@ describe("capture normalization", () => {
       labels: ["task:investigate-deployment-error", "task-terminal:explicit-complete"]
     });
   });
+
+  it("applies configured taxonomy overrides during capture", () => {
+    const config = resolveSherpaPluginConfig(
+      {
+        taxonomy: {
+          rules: [
+            {
+              match: {
+                kind: "tool",
+                toolName: "browser_navigate",
+                phase: "failed"
+              },
+              set: {
+                type: "browser.navigation_timeout",
+                labels: ["taxonomy:timeout"]
+              }
+            },
+            {
+              match: {
+                kind: "message",
+                channel: "slack",
+                contentPattern: "incident|sev"
+              },
+              set: {
+                type: "message.incident_reported",
+                labels: ["workflow:incident-response"]
+              }
+            }
+          ]
+        }
+      },
+      { agentId: "alpha" }
+    );
+
+    const toolEvent = buildToolFinishEvent(config, {
+      agentId: "alpha",
+      sessionKey: "agent:alpha:main",
+      toolName: "browser_navigate",
+      params: {
+        url: "https://example.com"
+      },
+      error: "navigation timeout"
+    });
+    const messageEvent = buildDispatchEvent(config, {
+      sessionKey: "agent:alpha:slack:direct:user-123",
+      channel: "slack",
+      senderId: "user-123",
+      content: "sev1 incident in production"
+    });
+
+    expect(toolEvent).toMatchObject({
+      type: "browser.navigation_timeout"
+    });
+    expect(toolEvent?.labels).toContain("taxonomy:timeout");
+    expect(messageEvent).toMatchObject({
+      type: "message.incident_reported"
+    });
+    expect(messageEvent?.labels).toContain("workflow:incident-response");
+  });
 });

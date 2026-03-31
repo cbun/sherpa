@@ -46,6 +46,15 @@ type ToolFinishCaptureInput = ToolStartCaptureInput & {
 
 type ToolFamily = "tool" | "browser" | "web" | "automation";
 
+type TaxonomyContext = {
+  kind: "message" | "session" | "task" | "tool";
+  toolName?: string;
+  toolFamily?: ToolFamily;
+  phase?: "started" | "succeeded" | "failed";
+  channel?: string;
+  content?: string;
+};
+
 type TaskStartCaptureInput = {
   agentId?: string | undefined;
   sessionId?: string | undefined;
@@ -63,7 +72,14 @@ type TaskEndCaptureInput = {
   title: string;
   slug: string;
   terminalType: "task.completed" | "task.failed" | "task.ended";
-  reason?: "explicit-complete" | "explicit-fail" | "session-end" | "superseded" | "stale-timeout";
+  reason?:
+    | "explicit-complete"
+    | "explicit-fail"
+    | "auto-complete-phrase"
+    | "auto-fail-phrase"
+    | "session-end"
+    | "superseded"
+    | "stale-timeout";
   timestamp?: number | undefined;
 };
 
@@ -219,6 +235,85 @@ function buildToolLabels(toolName: string, family: ToolFamily) {
   return [`tool:${toolName}`, `tool-family:${family}`];
 }
 
+function applyTaxonomyRules(
+  config: ResolvedSherpaPluginConfig,
+  event: SherpaEventInput,
+  context: TaxonomyContext
+) {
+  if (config.taxonomy.rules.length === 0) {
+    return event;
+  }
+
+  const labels = new Set(event.labels ?? []);
+
+  for (const rule of config.taxonomy.rules) {
+    const match = rule.match;
+
+    if (match.kind && match.kind !== context.kind) {
+      continue;
+    }
+
+    if (match.source && event.source !== match.source) {
+      continue;
+    }
+
+    if (match.type && event.type !== match.type) {
+      continue;
+    }
+
+    if (match.actor && event.actor !== match.actor) {
+      continue;
+    }
+
+    if (match.toolName && context.toolName !== match.toolName) {
+      continue;
+    }
+
+    if (match.toolFamily && context.toolFamily !== match.toolFamily) {
+      continue;
+    }
+
+    if (match.phase && context.phase !== match.phase) {
+      continue;
+    }
+
+    if (match.channel && context.channel !== match.channel) {
+      continue;
+    }
+
+    if (match.contentPattern) {
+      let matches = false;
+
+      try {
+        matches = new RegExp(match.contentPattern, "i").test(context.content ?? "");
+      } catch {
+        matches = false;
+      }
+
+      if (!matches) {
+        continue;
+      }
+    }
+
+    if (rule.set.type) {
+      event.type = rule.set.type;
+    }
+
+    if (rule.set.outcome) {
+      event.outcome = rule.set.outcome;
+    }
+
+    for (const label of rule.set.labels) {
+      if (label.trim()) {
+        labels.add(label);
+      }
+    }
+  }
+
+  event.labels = [...labels];
+  return event;
+}
+
 export function buildSessionStartEvent(
   config: ResolvedSherpaPluginConfig,
   input: SessionCaptureInput,
@@ -227,7 +322,7 @@ export function buildSessionStartEvent(
   const agentId = resolveAgentId(input);
   const type = input.resumedFrom ? "session.resumed" : "session.started";
 
-  return {
+  return applyTaxonomyRules(config, {
     agentId,
     caseId: options?.caseId ?? buildSessionCaseId(input),
     source: "openclaw.session",
@@ -243,7 +338,9 @@ export function buildSessionStartEvent(
       },
       config.ledger.maxMetaBytes
     )
-  };
+  }, {
+    kind: "session"
+  });
 }
 
 export function buildSessionEndEvent(
@@ -253,7 +350,7 @@ export function buildSessionEndEvent(
 ): SherpaEventInput {
   const agentId = resolveAgentId(input);
 
-  return {
+  return applyTaxonomyRules(config, {
     agentId,
     caseId: options?.caseId ?? buildSessionCaseId(input),
     source: "openclaw.session",
@@ -271,7 +368,9 @@ export function buildSessionEndEvent(
       },
       config.ledger.maxMetaBytes
     )
-  };
+  }, {
+    kind: "session"
+  });
 }
 
 export function buildDispatchEvent(
@@ -298,8 +397,9 @@ export function buildDispatchEvent(
         }
       : {})
   });
+  const normalizedChannel = safeString(input.channel);
 
-  return {
+  return applyTaxonomyRules(config, {
     agentId,
     caseId: options?.caseId ?? caseId,
     ts: typeof input.timestamp === "number" ? new Date(input.timestamp).toISOString() : undefined,
@@ -312,7 +412,11 @@ export function buildDispatchEvent(
       contentChars: input.content.length
     },
     meta: buildMessageMeta(config, input, agentId)
-  };
+  }, {
+    kind: "message",
+    ...(normalizedChannel ? { channel: normalizedChannel } : {}),
+    content: input.content
+  });
 }
 
 export function buildTaskStartEvent(
@@ -322,7 +426,7 @@ export function buildTaskStartEvent(
 ): SherpaEventInput {
   const agentId = resolveAgentId(input);
 
-  return {
+  return applyTaxonomyRules(config, {
     agentId,
     caseId: options?.caseId ?? buildSessionCaseId(input),
     ts: typeof input.timestamp === "number" ? new Date(input.timestamp).toISOString() : undefined,
@@ -346,7 +450,9 @@ export function buildTaskStartEvent(
       },
       config.ledger.maxMetaBytes
     )
-  };
+  }, {
+    kind: "task"
+  });
 }
 
 export function buildTaskEndEvent(
@@ -362,7 +468,7 @@ export function buildTaskEndEvent(
         ? "failure"
         : "unknown";
 
-  return {
+  return applyTaxonomyRules(config, {
     agentId,
     caseId: options?.caseId ?? buildSessionCaseId(input),
     ts: typeof input.timestamp === "number" ? new Date(input.timestamp).toISOString() : undefined,
@@ -386,7 +492,9 @@ export function buildTaskEndEvent(
       },
       config.ledger.maxMetaBytes
     )
-  };
+  }, {
+    kind: "task"
+  });
 }
 
 export function buildToolStartEvent(
@@ -401,7 +509,7 @@ export function buildToolStartEvent(
 
   const agentId = resolveAgentId(input);
 
-  return {
+  return applyTaxonomyRules(config, {
     agentId,
     caseId: options?.caseId ?? buildSessionCaseId(input),
     source: `openclaw.${family}`,
@@ -413,7 +521,12 @@ export function buildToolStartEvent(
       paramCount: Object.keys(input.params).length
     },
     meta: buildToolMeta(config, input)
-  };
+  }, {
+    kind: "tool",
+    toolName: input.toolName,
+    toolFamily: family,
+    phase: "started"
+  });
 }
 
 export function buildToolFinishEvent(
@@ -428,12 +541,13 @@ export function buildToolFinishEvent(
 
   const agentId = resolveAgentId(input);
   const succeeded = !input.error;
+  const phase = succeeded ? "succeeded" : "failed";
 
-  return {
+  return applyTaxonomyRules(config, {
     agentId,
     caseId: options?.caseId ?? buildSessionCaseId(input),
     source: `openclaw.${family}`,
-    type: buildToolType(family, succeeded ? "succeeded" : "failed"),
+    type: buildToolType(family, phase),
     actor: "agent",
     outcome: succeeded ? "success" : "failure",
     labels: buildToolLabels(input.toolName, family),
@@ -443,5 +557,10 @@ export function buildToolFinishEvent(
       ...(input.result !== undefined ? { hasResult: 1 } : {})
     },
     meta: buildToolMeta(config, input)
-  };
+  }, {
+    kind: "tool",
+    toolName: input.toolName,
+    toolFamily: family,
+    phase
+  });
 }

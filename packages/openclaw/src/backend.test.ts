@@ -228,6 +228,60 @@ describe("CliSherpaBackend", () => {
       distinctTypes: 4
     });
   });
+
+  it("passes analytics-report options to the CLI transport", async () => {
+    const spawnStub = createSpawnStub((_command, args) => {
+      expect(args).toEqual([
+        "--root",
+        "/tmp/sherpa-alpha",
+        "--default-order",
+        "3",
+        "--min-order",
+        "1",
+        "--max-order",
+        "5",
+        "--min-support",
+        "1",
+        "analytics-report",
+        "--limit",
+        "4"
+      ]);
+
+      return {
+        stdout: JSON.stringify({
+          generatedAt: "2026-03-31T00:00:00.000Z",
+          cases: {
+            total: 3,
+            success: 1,
+            failure: 1,
+            unknown: 1,
+            successRate: 0.333,
+            failureRate: 0.333
+          },
+          hotTransitions: [],
+          failureBranches: [],
+          stallBranches: []
+        })
+      };
+    });
+
+    const resolved = resolveSherpaPluginConfig(
+      {
+        transport: {
+          mode: "stdio"
+        },
+        store: {
+          root: "/tmp/sherpa-{agentId}"
+        }
+      },
+      { agentId: "alpha" }
+    );
+    const backend = new CliSherpaBackend(resolved, spawnStub as never);
+
+    await expect(backend.analyticsReport({ limit: 4 })).resolves.toMatchObject({
+      cases: { total: 3 }
+    });
+  });
 });
 
 describe("HttpSherpaBackend", () => {
@@ -341,6 +395,58 @@ describe("HttpSherpaBackend", () => {
       })
     ).resolves.toMatchObject({
       distinctTypes: 4
+    });
+  });
+
+  it("posts analytics RPC requests to the configured daemon base URL", async () => {
+    const fetchStub = vi.fn(async (_input: URL | RequestInfo, init?: RequestInit) => {
+      expect(JSON.parse(String(init?.body))).toEqual({
+        method: "analyticsReport",
+        params: {
+          limit: 4
+        }
+      });
+
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          result: {
+            generatedAt: "2026-03-31T00:00:00.000Z",
+            cases: {
+              total: 3,
+              success: 1,
+              failure: 1,
+              unknown: 1,
+              successRate: 0.333,
+              failureRate: 0.333
+            },
+            hotTransitions: [],
+            failureBranches: [],
+            stallBranches: []
+          }
+        }),
+        {
+          status: 200,
+          headers: {
+            "content-type": "application/json"
+          }
+        }
+      );
+    });
+
+    const resolved = resolveSherpaPluginConfig(
+      {
+        transport: {
+          mode: "http",
+          baseUrl: "http://127.0.0.1:8787"
+        }
+      },
+      { agentId: "alpha" }
+    );
+    const backend = new HttpSherpaBackend(resolved, fetchStub as never);
+
+    await expect(backend.analyticsReport({ limit: 4 })).resolves.toMatchObject({
+      cases: { total: 3 }
     });
   });
 });

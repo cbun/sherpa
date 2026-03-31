@@ -28,6 +28,7 @@
     "typecheck": "pnpm -r typecheck",
     "test": "vitest run",
     "validate": "node packages/cli/dist/index.js validate",
+    "validate-suite": "node packages/cli/dist/index.js validate-suite",
     "changeset": "changeset",
     "version-packages": "changeset version",
     "release": "pnpm build && changeset publish"

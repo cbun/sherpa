@@ -34,6 +34,26 @@ export interface SherpaPluginConfig {
     maxRisks?: number;
     maxChars?: number;
   };
+  taxonomy?: {
+    rules?: Array<{
+      match?: {
+        kind?: "message" | "session" | "task" | "tool";
+        source?: string;
+        type?: string;
+        actor?: string;
+        toolName?: string;
+        toolFamily?: "tool" | "browser" | "web" | "automation";
+        phase?: "started" | "succeeded" | "failed";
+        channel?: string;
+        contentPattern?: string;
+      };
+      set?: {
+        type?: string;
+        outcome?: "success" | "failure" | "unknown";
+        labels?: string[];
+      };
+    }>;
+  };
   update?: {
     onBoot?: boolean;
     interval?: string;
@@ -68,6 +88,9 @@ export interface SherpaPluginConfig {
       minContentChars?: number;
       shiftPhrases?: string[];
       maxTitleTokenOverlap?: number;
+      acknowledgmentPhrases?: string[];
+      completePhrases?: string[];
+      failPhrases?: string[];
     };
   };
   capture?: {
@@ -111,6 +134,26 @@ export interface ResolvedSherpaPluginConfig {
     maxRisks: number;
     maxChars: number;
   };
+  taxonomy: {
+    rules: Array<{
+      match: {
+        kind?: "message" | "session" | "task" | "tool";
+        source?: string;
+        type?: string;
+        actor?: string;
+        toolName?: string;
+        toolFamily?: "tool" | "browser" | "web" | "automation";
+        phase?: "started" | "succeeded" | "failed";
+        channel?: string;
+        contentPattern?: string;
+      };
+      set: {
+        type?: string;
+        outcome?: "success" | "failure" | "unknown";
+        labels: string[];
+      };
+    }>;
+  };
   update: {
     onBoot: boolean;
     interval: string;
@@ -148,6 +191,9 @@ export interface ResolvedSherpaPluginConfig {
       minContentChars: number;
       shiftPhrases: string[];
       maxTitleTokenOverlap: number;
+      acknowledgmentPhrases: string[];
+      completePhrases: string[];
+      failPhrases: string[];
     };
   };
 }
@@ -227,11 +273,32 @@ export function resolveSherpaPluginConfig(
       memoryWrites: config?.capture?.memoryWrites ?? false
     },
     advisory: {
-      enabled: config?.advisory?.enabled ?? false,
+      enabled: config?.advisory?.enabled ?? true,
       injectThreshold: config?.advisory?.injectThreshold ?? 0.75,
       maxCandidates: config?.advisory?.maxCandidates ?? 3,
       maxRisks: config?.advisory?.maxRisks ?? 2,
       maxChars: config?.advisory?.maxChars ?? 900
+    },
+    taxonomy: {
+      rules:
+        config?.taxonomy?.rules?.map((rule) => ({
+          match: {
+            ...(rule.match?.kind ? { kind: rule.match.kind } : {}),
+            ...(rule.match?.source ? { source: rule.match.source } : {}),
+            ...(rule.match?.type ? { type: rule.match.type } : {}),
+            ...(rule.match?.actor ? { actor: rule.match.actor } : {}),
+            ...(rule.match?.toolName ? { toolName: rule.match.toolName } : {}),
+            ...(rule.match?.toolFamily ? { toolFamily: rule.match.toolFamily } : {}),
+            ...(rule.match?.phase ? { phase: rule.match.phase } : {}),
+            ...(rule.match?.channel ? { channel: rule.match.channel } : {}),
+            ...(rule.match?.contentPattern ? { contentPattern: rule.match.contentPattern } : {})
+          },
+          set: {
+            ...(rule.set?.type ? { type: rule.set.type } : {}),
+            ...(rule.set?.outcome ? { outcome: rule.set.outcome } : {}),
+            labels: rule.set?.labels ?? []
+          }
+        })) ?? []
     },
     update: {
       onBoot: config?.update?.onBoot ?? true,
@@ -295,7 +362,34 @@ export function resolveSherpaPluginConfig(
           "one more thing",
           "unrelated"
         ],
-        maxTitleTokenOverlap: config?.caseSplitting?.auto?.maxTitleTokenOverlap ?? 0.25
+        maxTitleTokenOverlap: config?.caseSplitting?.auto?.maxTitleTokenOverlap ?? 0.25,
+        acknowledgmentPhrases: config?.caseSplitting?.auto?.acknowledgmentPhrases ?? [
+          "thanks",
+          "thank you",
+          "got it",
+          "sounds good",
+          "ok",
+          "okay",
+          "perfect"
+        ],
+        completePhrases: config?.caseSplitting?.auto?.completePhrases ?? [
+          "that solved it",
+          "that worked",
+          "issue resolved",
+          "problem solved",
+          "we are good",
+          "we're good",
+          "fixed now"
+        ],
+        failPhrases: config?.caseSplitting?.auto?.failPhrases ?? [
+          "still blocked",
+          "this failed",
+          "that failed",
+          "did not work",
+          "didn't work",
+          "cannot proceed",
+          "can't proceed"
+        ]
       }
     }
   };

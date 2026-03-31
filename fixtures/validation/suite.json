@@ -1,0 +1,19 @@
+{
+  "name": "bundled-validation",
+  "datasets": [
+    {
+      "path": "./synthetic-workflows.json",
+      "name": "synthetic-workflows"
+    },
+    {
+      "path": "./simple.csv",
+      "format": "csv",
+      "name": "simple-csv"
+    },
+    {
+      "path": "./simple.xes",
+      "format": "xes",
+      "name": "simple-xes"
+    }
+  ]
+}

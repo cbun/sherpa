@@ -6,6 +6,7 @@ import process from "node:process";
 import { SherpaEngine, type SherpaEventInput, type WorkflowRecallMode } from "@sherpa/core";
 import { Command, type Command as CommandInstance } from "commander";
 
+import { assertValidationSuiteThresholds, validateSuite } from "./validate-suite.js";
 import { assertTaxonomyThresholds } from "./taxonomy.js";
 import { assertValidationThresholds, validateDatasetFile } from "./validate.js";
 
@@ -469,6 +470,62 @@ program
       ...(options.minTop1 ? { minTop1Accuracy: parseRatio(options.minTop1, "--min-top1") } : {}),
       ...(options.minTopk ? { minTopKAccuracy: parseRatio(options.minTopk, "--min-topk") } : {}),
       ...(options.maxMissCount ? { maxMissCount: parseInteger(options.maxMissCount, "--max-miss-count") } : {})
+    });
+    printJson(report);
+  });
+
+program
+  .command("validate-suite")
+  .description("Run validation across a dataset directory or suite manifest")
+  .option("--input <path>", "Directory or JSON suite manifest", path.join(process.cwd(), "fixtures/validation"))
+  .option("--format <format>", "auto, json, jsonl, csv, or xes", "auto")
+  .option("--case-field <name>", "Case identifier field for CSV or XES imports")
+  .option("--type-field <name>", "Event type field for CSV or XES imports")
+  .option("--timestamp-field <name>", "Timestamp field for CSV or XES imports")
+  .option("--outcome-field <name>", "Outcome field for CSV or XES imports")
+  .option("--source-field <name>", "Event source field for CSV or XES imports")
+  .option("--agent-field <name>", "Agent identifier field for CSV or XES imports")
+  .option("--actor-field <name>", "Actor field for CSV or XES imports")
+  .option("--csv-delimiter <char>", "CSV delimiter for tabular imports", ",")
+  .option("--top-k <n>", "Maximum candidate window for accuracy scoring", "3")
+  .option("--max-misses <n>", "Maximum number of miss examples per dataset", "25")
+  .option("--min-top1 <ratio>", "Fail if aggregate top1 accuracy drops below this ratio")
+  .option("--min-topk <ratio>", "Fail if aggregate topK accuracy drops below this ratio")
+  .option("--max-miss-count <n>", "Fail if aggregate miss count exceeds this number")
+  .option("--max-failing-datasets <n>", "Fail if more than this many datasets violate the thresholds")
+  .action(async (options, command) => {
+    const globals = command.optsWithGlobals() as {
+      root?: string;
+      defaultOrder?: string;
+      minOrder?: string;
+      maxOrder?: string;
+      minSupport?: string;
+    };
+    const report = await validateSuite(options.input, {
+      rootParent: globals.root ?? defaultRoot(),
+      format: options.format,
+      ...(options.caseField ? { caseField: options.caseField } : {}),
+      ...(options.typeField ? { typeField: options.typeField } : {}),
+      ...(options.timestampField ? { timestampField: options.timestampField } : {}),
+      ...(options.outcomeField ? { outcomeField: options.outcomeField } : {}),
+      ...(options.sourceField ? { sourceField: options.sourceField } : {}),
+      ...(options.agentField ? { agentField: options.agentField } : {}),
+      ...(options.actorField ? { actorField: options.actorField } : {}),
+      ...(options.csvDelimiter ? { csvDelimiter: options.csvDelimiter } : {}),
+      ...(globals.defaultOrder ? { defaultOrder: parseInteger(globals.defaultOrder, "--default-order") } : {}),
+      ...(globals.minOrder ? { minOrder: parseInteger(globals.minOrder, "--min-order") } : {}),
+      ...(globals.maxOrder ? { maxOrder: parseInteger(globals.maxOrder, "--max-order") } : {}),
+      ...(globals.minSupport ? { minSupport: parseInteger(globals.minSupport, "--min-support") } : {}),
+      topK: parseInteger(options.topK, "--top-k"),
+      maxMisses: parseInteger(options.maxMisses, "--max-misses")
+    });
+    assertValidationSuiteThresholds(report, {
+      ...(options.minTop1 ? { minTop1Accuracy: parseRatio(options.minTop1, "--min-top1") } : {}),
+      ...(options.minTopk ? { minTopKAccuracy: parseRatio(options.minTopk, "--min-topk") } : {}),
+      ...(options.maxMissCount ? { maxMissCount: parseInteger(options.maxMissCount, "--max-miss-count") } : {}),
+      ...(options.maxFailingDatasets
+        ? { maxFailingDatasets: parseInteger(options.maxFailingDatasets, "--max-failing-datasets") }
+        : {})
     });
     printJson(report);
   });

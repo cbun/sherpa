@@ -6,7 +6,7 @@ At a technical level, Sherpa is a de Bruijn-style higher-order workflow memory: 
 
 ## Status
 
-Sherpa now has an alpha implementation:
+Sherpa now has a production-oriented implementation:
 
 - `@sherpa/core`: append-only ledger, batched ingest, derived SQLite graph, and retrieval primitives
 - `sherpa`: CLI for ingest, rebuild, status, workflow-status, doctor, export, gc, workflow state, workflow next, workflow risks, and workflow recall
@@ -56,6 +56,8 @@ pnpm install
 pnpm build
 pnpm test
 pnpm validate --dataset fixtures/validation/synthetic-workflows.json
+pnpm validate-suite --input fixtures/validation
+pnpm validate-suite --input fixtures/validation/suite.json
 pnpm validate --dataset fixtures/validation/simple.csv
 pnpm validate --dataset fixtures/validation/simple.xes
 ```
@@ -87,6 +89,8 @@ node packages/cli/dist/index.js --root ./.sherpa workflow-recall --case-id case-
 node packages/cli/dist/index.js --root ./.sherpa taxonomy-report --recent-days 14 --max-types 50 --max-drift-score 0.2
 node packages/cli/dist/index.js --root ./.sherpa analytics-report --limit 10
 node packages/cli/dist/index.js validate --dataset fixtures/validation/synthetic-workflows.json --top-k 3 --max-misses 10
+node packages/cli/dist/index.js validate-suite --input fixtures/validation --min-topk 0.2 --max-failing-datasets 1
+node packages/cli/dist/index.js validate-suite --input fixtures/validation/suite.json --max-failing-datasets 10
 node packages/cli/dist/index.js validate --dataset fixtures/validation/synthetic-workflows.json --min-topk 0.25 --max-miss-count 25
 node packages/cli/dist/index.js validate --dataset ./event-log.csv --format csv --case-field case_id --type-field activity --timestamp-field timestamp
 ```
@@ -132,15 +136,17 @@ node packages/cli/dist/index.js --root ./.sherpa serve --host 127.0.0.1 --port 8
 - The current implementation rebuilds the derived graph from the ledger on each ingest or ingest batch. That keeps the source of truth simple now; incremental updates can come later.
 - The engine now supports minimum-support variable-order backoff, richer status/freshness reporting, JSON snapshot export, graph maintenance via `gc`, terminal outcome inference from explicit task completion/failure events, calibrated next-step ranking that considers branch probability, support, and eventual success/failure rates, and richer risk outputs with confidence and score fields.
 - Risk and recall are still heuristic, but they now benefit from stronger terminal-outcome derivation instead of blindly trusting the last event row.
-- The OpenClaw package now captures session lifecycle, inbound dispatch, and tool lifecycle events with redacted-by-default metadata, debounced per-store batching, conservative scope rules, ignore/stateless session patterns, explicit task-boundary case splitting from configurable markers, explicit task completion/failure markers, automatic task starts on the first meaningful user message, rotation after a configurable idle timeout, conservative intent-shift splitting from transition phrases plus low token overlap, terminal task events when tasks are superseded or the session ends, stale active-case expiry so old tasks do not leak into later prompts or tool calls, optional bounded advisory injection, structured degraded responses when the backend is unavailable, and a configurable backend transport that can run embedded, shell out to the Sherpa CLI, or talk to a warm local HTTP daemon.
+- The OpenClaw package now captures session lifecycle, inbound dispatch, and tool lifecycle events with redacted-by-default metadata, debounced per-store batching, conservative scope rules, ignore/stateless session patterns, explicit task-boundary case splitting from configurable markers, natural-language task completion and failure phrases, automatic task starts on the first meaningful user message, rotation after a configurable idle timeout, conservative intent-shift splitting from transition phrases plus low token overlap, acknowledgment filtering so brief confirmations do not open fresh tasks, terminal task events when tasks are superseded or the session ends, configurable taxonomy override rules, advisory injection enabled by default behind confidence gating, structured degraded responses when the backend is unavailable, and a configurable backend transport that can run embedded, shell out to the Sherpa CLI, or talk to a warm local HTTP daemon.
 - The MCP package now supports stdio plus a minimal stateless streamable HTTP deployment path with a `/health` endpoint for local sidecar/service use.
 - The CLI now supports `ingest-batch` so subprocess transports can flush event bursts efficiently.
 - The CLI now also supports `serve`, exposing a small local JSON HTTP daemon at `/health` and `/rpc`, and the OpenClaw plugin can optionally manage that daemon process itself in HTTP mode with health checks and restart backoff supervision.
 - The CLI now also supports `taxonomy-report`, which measures event alphabet cardinality, rare-event share, recent new-type share, and recent-vs-baseline distribution drift so normalization quality can be gated in CI.
 - The CLI now also supports `analytics-report`, which summarizes cross-case hot transitions plus systemic failure and stall branches from the derived graph.
 - The CLI now also supports `validate`, which runs a leave-one-case-out next-step benchmark over JSON, JSONL, CSV, and XES event datasets, with capped miss output, per-event accuracy breakdown, and optional threshold-based failure for CI gating. The repo ships with synthetic JSON plus simple CSV and XES fixtures under `fixtures/validation/`.
+- The CLI now also supports `validate-suite`, which benchmarks an entire dataset directory or suite manifest and can fail on aggregate quality or too many regressed datasets.
 - `workflow_status` in the native plugin now reports plugin transport and capture/scope diagnostics in addition to core backend freshness.
 - The native plugin now also exposes `workflow_taxonomy`, so operators can inspect event-alphabet drift from OpenClaw without dropping to the Sherpa CLI.
+- The native plugin now also exposes `workflow_analytics`, so cross-case transition summaries are available inside OpenClaw as an operator tool.
 - GitHub Actions CI now runs typecheck, test, build, and the synthetic validation harness on pushes and pull requests.
 - Changesets-based release automation is now configured under `.changeset/` and `.github/workflows/release.yml` for version PRs and npm publication.
 
@@ -181,9 +187,8 @@ That leads to a few practical implementation rules:
 - `packages/mcp`: MCP package
 - `docs/`: design notes, ADRs, and integration docs
 
-## Next Steps
+## Remaining Work
 
-- Improve recall/risk scoring beyond the current heuristic layer
-- Improve automatic boundary heuristics beyond phrase and token-overlap rules
-- Add stronger outcome handling beyond explicit terminal markers, session-end cleanup, and stale active-case expiry
-- Expand the validation harness from synthetic traces to larger real event-log datasets
+- Improve recall and risk ranking beyond the current heuristic layer
+- Add larger real-world validation corpora beyond the bundled synthetic and simple fixtures
+- Decide whether advisory confidence policy needs another hardening pass before calling it fully default-safe

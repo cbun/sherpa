@@ -193,6 +193,35 @@ describe("SherpaCaseRouter", () => {
     ).toBeUndefined();
   });
 
+  it("closes the active task on a natural-language completion phrase", () => {
+    const config = resolveSherpaPluginConfig(undefined, { agentId: "alpha" });
+    const router = new SherpaCaseRouter(config);
+    const policy = resolveSherpaPolicyDecision(config, {
+      sessionKey: "agent:alpha:telegram:direct:user-1"
+    });
+
+    const first = router.routeDispatch({
+      policy,
+      sessionKey: "agent:alpha:telegram:direct:user-1",
+      content: "Investigate the deployment error in production.",
+      timestamp: 1_000
+    });
+
+    const second = router.routeDispatch({
+      policy,
+      sessionKey: "agent:alpha:telegram:direct:user-1",
+      content: "That solved it, thanks.",
+      timestamp: 2_000
+    });
+
+    expect(second.boundary).toBeNull();
+    expect(second.terminal).toMatchObject({
+      caseId: first.caseId,
+      terminalType: "task.completed",
+      reason: "auto-complete-phrase"
+    });
+  });
+
   it("closes the active task when an explicit failure marker is sent", () => {
     const config = resolveSherpaPluginConfig(undefined, { agentId: "alpha" });
     const router = new SherpaCaseRouter(config);
@@ -217,6 +246,70 @@ describe("SherpaCaseRouter", () => {
     expect(second.terminal).toMatchObject({
       terminalType: "task.failed",
       reason: "explicit-fail"
+    });
+  });
+
+  it("closes the active task on a natural-language failure phrase", () => {
+    const config = resolveSherpaPluginConfig(undefined, { agentId: "alpha" });
+    const router = new SherpaCaseRouter(config);
+    const policy = resolveSherpaPolicyDecision(config, {
+      sessionKey: "agent:alpha:telegram:direct:user-1"
+    });
+
+    router.routeDispatch({
+      policy,
+      sessionKey: "agent:alpha:telegram:direct:user-1",
+      content: "Investigate the deployment error in production.",
+      timestamp: 1_000
+    });
+
+    const second = router.routeDispatch({
+      policy,
+      sessionKey: "agent:alpha:telegram:direct:user-1",
+      content: "Still blocked, cannot proceed.",
+      timestamp: 2_000
+    });
+
+    expect(second.terminal).toMatchObject({
+      terminalType: "task.failed",
+      reason: "auto-fail-phrase"
+    });
+  });
+
+  it("does not create a new task boundary from a short acknowledgment", () => {
+    const config = resolveSherpaPluginConfig(undefined, { agentId: "alpha" });
+    const router = new SherpaCaseRouter(config);
+    const policy = resolveSherpaPolicyDecision(config, {
+      sessionKey: "agent:alpha:telegram:direct:user-1"
+    });
+
+    const dispatch = router.routeDispatch({
+      policy,
+      sessionKey: "agent:alpha:telegram:direct:user-1",
+      content: "Thanks, sounds good.",
+      timestamp: 2_000
+    });
+
+    expect(dispatch.boundary).toBeNull();
+    expect(dispatch.caseId).toBeNull();
+  });
+
+  it("still creates a task boundary when an acknowledgment is followed by a new request", () => {
+    const config = resolveSherpaPluginConfig(undefined, { agentId: "alpha" });
+    const router = new SherpaCaseRouter(config);
+    const policy = resolveSherpaPolicyDecision(config, {
+      sessionKey: "agent:alpha:telegram:direct:user-1"
+    });
+
+    const dispatch = router.routeDispatch({
+      policy,
+      sessionKey: "agent:alpha:telegram:direct:user-1",
+      content: "Thanks, now draft the customer renewal email.",
+      timestamp: 2_000
+    });
+
+    expect(dispatch.boundary).toMatchObject({
+      reason: "auto-first-message"
     });
   });
 

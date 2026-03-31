@@ -19,12 +19,24 @@ export type TaskBoundary = {
   reason: "explicit" | "auto-first-message" | "auto-idle-timeout" | "auto-intent-shift";
 };
 
+type DispatchTerminalDetection = {
+  terminalType: "task.completed" | "task.failed";
+  reason: "explicit-complete" | "explicit-fail" | "auto-complete-phrase" | "auto-fail-phrase";
+};
+
 export type TaskTerminal = {
   caseId: string;
   title: string;
   slug: string;
   terminalType: "task.completed" | "task.failed" | "task.ended";
-  reason: "explicit-complete" | "explicit-fail" | "session-end" | "superseded" | "stale-timeout";
+  reason:
+    | "explicit-complete"
+    | "explicit-fail"
+    | "auto-complete-phrase"
+    | "auto-fail-phrase"
+    | "session-end"
+    | "superseded"
+    | "stale-timeout";
 };
 
 type ActiveCaseState = {
@@ -201,6 +213,39 @@ export class SherpaCaseRouter {
     return null;
   }
 
+  private startsWithAnyPhrase(content: string, phrases: string[]) {
+    const lowered = content.trim().toLowerCase();
+
+    for (const phrase of phrases) {
+      const normalized = phrase.trim().toLowerCase();
+      if (!normalized) {
+        continue;
+      }
+
+      if (
+        lowered === normalized ||
+        lowered.startsWith(`${normalized} `) ||
+        lowered.startsWith(`${normalized}.`) ||
+        lowered.startsWith(`${normalized},`) ||
+        lowered.startsWith(`${normalized}:`) ||
+        lowered.startsWith(`${normalized}!`) ||
+        lowered.startsWith(`${normalized}?`)
+      ) {
+        return normalized;
+      }
+    }
+
+    return null;
+  }
+
+  private isAcknowledgmentMessage(content: string) {
+    if (this.startsWithAnyPhrase(content, this.config.caseSplitting.auto.acknowledgmentPhrases) === null) {
+      return false;
+    }
+
+    return tokenize(content).length <= 4;
+  }
+
   private detectTerminalMarker(content: string) {
     const trimmed = content.trim().toLowerCase();
 
@@ -227,6 +272,29 @@ export class SherpaCaseRouter {
     return null;
   }
 
+  private detectTerminalSignal(content: string): DispatchTerminalDetection | null {
+    const marker = this.detectTerminalMarker(content);
+    if (marker) {
+      return marker;
+    }
+
+    if (this.startsWithAnyPhrase(content, this.config.caseSplitting.auto.completePhrases)) {
+      return {
+        terminalType: "task.completed",
+        reason: "auto-complete-phrase"
+      };
+    }
+
+    if (this.startsWithAnyPhrase(content, this.config.caseSplitting.auto.failPhrases)) {
+      return {
+        terminalType: "task.failed",
+        reason: "auto-fail-phrase"
+      };
+    }
+
+    return null;
+  }
+
   private detectAutomaticBoundary(params: {
     sessionKey: string;
     content: string;
@@ -238,6 +306,10 @@ export class SherpaCaseRouter {
 
     const normalizedTitle = this.normalizeAutomaticTitle(params.content);
     if (!normalizedTitle || normalizedTitle.length < this.config.caseSplitting.auto.minContentChars) {
+      return null;
+    }
+
+    if (this.isAcknowledgmentMessage(normalizedTitle)) {
       return null;
     }
 
@@ -307,7 +379,7 @@ export class SherpaCaseRouter {
 
     const staleTerminal = this.expireStaleCase(sessionKey, params.timestamp);
     const current = this.activeCases.get(sessionKey) ?? null;
-    const terminalMarker = this.detectTerminalMarker(params.content);
+    const terminalMarker = this.detectTerminalSignal(params.content);
     if (terminalMarker && current) {
       this.activeCases.delete(sessionKey);
 

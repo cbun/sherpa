@@ -78,11 +78,55 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "enabled": { "type": "boolean", "default": false },
+          "enabled": { "type": "boolean", "default": true },
           "injectThreshold": { "type": "number", "minimum": 0, "maximum": 1, "default": 0.75 },
           "maxCandidates": { "type": "integer", "minimum": 1, "default": 3 },
           "maxRisks": { "type": "integer", "minimum": 1, "default": 2 },
           "maxChars": { "type": "integer", "minimum": 1, "default": 900 }
+        }
+      },
+      "taxonomy": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "rules": {
+            "type": "array",
+            "default": [],
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "match": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "kind": { "type": "string", "enum": ["message", "session", "task", "tool"] },
+                    "source": { "type": "string" },
+                    "type": { "type": "string" },
+                    "actor": { "type": "string" },
+                    "toolName": { "type": "string" },
+                    "toolFamily": { "type": "string", "enum": ["tool", "browser", "web", "automation"] },
+                    "phase": { "type": "string", "enum": ["started", "succeeded", "failed"] },
+                    "channel": { "type": "string" },
+                    "contentPattern": { "type": "string" }
+                  }
+                },
+                "set": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": { "type": "string" },
+                    "outcome": { "type": "string", "enum": ["success", "failure", "unknown"] },
+                    "labels": {
+                      "type": "array",
+                      "items": { "type": "string" },
+                      "default": []
+                    }
+                  }
+                }
+              }
+            }
+          }
         }
       },
       "update": {
@@ -183,7 +227,38 @@
                   "unrelated"
                 ]
               },
-              "maxTitleTokenOverlap": { "type": "number", "minimum": 0, "maximum": 1, "default": 0.25 }
+              "maxTitleTokenOverlap": { "type": "number", "minimum": 0, "maximum": 1, "default": 0.25 },
+              "acknowledgmentPhrases": {
+                "type": "array",
+                "items": { "type": "string" },
+                "default": ["thanks", "thank you", "got it", "sounds good", "ok", "okay", "perfect"]
+              },
+              "completePhrases": {
+                "type": "array",
+                "items": { "type": "string" },
+                "default": [
+                  "that solved it",
+                  "that worked",
+                  "issue resolved",
+                  "problem solved",
+                  "we are good",
+                  "we're good",
+                  "fixed now"
+                ]
+              },
+              "failPhrases": {
+                "type": "array",
+                "items": { "type": "string" },
+                "default": [
+                  "still blocked",
+                  "this failed",
+                  "that failed",
+                  "did not work",
+                  "didn't work",
+                  "cannot proceed",
+                  "can't proceed"
+                ]
+              }
             }
           }
         }
@@ -245,6 +320,9 @@
     },
     "advisory.enabled": {
       "label": "Enable Advisories"
+    },
+    "taxonomy.rules": {
+      "label": "Taxonomy Rules"
     },
     "advisory.injectThreshold": {
       "label": "Advisory Threshold"

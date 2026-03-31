@@ -80,10 +80,30 @@ describe("resolveSherpaPluginConfig", () => {
           "one more thing",
           "unrelated"
         ],
-        maxTitleTokenOverlap: 0.25
+        maxTitleTokenOverlap: 0.25,
+        acknowledgmentPhrases: ["thanks", "thank you", "got it", "sounds good", "ok", "okay", "perfect"],
+        completePhrases: [
+          "that solved it",
+          "that worked",
+          "issue resolved",
+          "problem solved",
+          "we are good",
+          "we're good",
+          "fixed now"
+        ],
+        failPhrases: [
+          "still blocked",
+          "this failed",
+          "that failed",
+          "did not work",
+          "didn't work",
+          "cannot proceed",
+          "can't proceed"
+        ]
       }
     });
-    expect(resolved.advisory.enabled).toBe(false);
+    expect(resolved.advisory.enabled).toBe(true);
+    expect(resolved.taxonomy.rules).toEqual([]);
   });
 
   it("respects configured overrides", () => {
@@ -151,8 +171,27 @@ describe("resolveSherpaPluginConfig", () => {
             staleTimeout: "1h",
             minContentChars: 12,
             shiftPhrases: ["switching gears", "new topic"],
-            maxTitleTokenOverlap: 0.1
+            maxTitleTokenOverlap: 0.1,
+            acknowledgmentPhrases: ["thanks team"],
+            completePhrases: ["all good now"],
+            failPhrases: ["still broken"]
           }
+        },
+        taxonomy: {
+          rules: [
+            {
+              match: {
+                kind: "tool",
+                toolName: "browser_navigate",
+                phase: "failed"
+              },
+              set: {
+                type: "browser.navigation_timeout",
+                outcome: "failure",
+                labels: ["taxonomy:custom"]
+              }
+            }
+          ]
         }
       },
       { agentId: "beta" }
@@ -188,6 +227,20 @@ describe("resolveSherpaPluginConfig", () => {
       maxRisks: 4,
       maxChars: 1200
     });
+    expect(resolved.taxonomy.rules).toEqual([
+      {
+        match: {
+          kind: "tool",
+          toolName: "browser_navigate",
+          phase: "failed"
+        },
+        set: {
+          type: "browser.navigation_timeout",
+          outcome: "failure",
+          labels: ["taxonomy:custom"]
+        }
+      }
+    ]);
     expect(resolved.update).toMatchObject({
       onBoot: false,
       interval: "30s",
@@ -222,7 +275,10 @@ describe("resolveSherpaPluginConfig", () => {
         staleTimeoutMs: 3600000,
         minContentChars: 12,
         shiftPhrases: ["switching gears", "new topic"],
-        maxTitleTokenOverlap: 0.1
+        maxTitleTokenOverlap: 0.1,
+        acknowledgmentPhrases: ["thanks team"],
+        completePhrases: ["all good now"],
+        failPhrases: ["still broken"]
       }
     });
   });

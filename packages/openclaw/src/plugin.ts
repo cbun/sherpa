@@ -545,6 +545,9 @@ export default definePluginEntry({
               completeMarkerCount: runtime.resolved.caseSplitting.completeMarkers.length,
               failMarkerCount: runtime.resolved.caseSplitting.failMarkers.length
             },
+            taxonomy: {
+              ruleCount: runtime.resolved.taxonomy.rules.length
+            },
             scope: {
               defaultAction: runtime.resolved.scope.defaultAction,
               ruleCount: runtime.resolved.scope.rules.length,
@@ -552,6 +555,26 @@ export default definePluginEntry({
               ignorePatternCount: runtime.resolved.ignoreSessionPatterns.length
             }
           });
+        } catch (error) {
+          return unavailableResult(error);
+        }
+      }
+    });
+
+    api.registerTool({
+      name: "workflow_analytics",
+      label: "Workflow Analytics",
+      description: "Summarize cross-case hot transitions and systemic failure or stall branches",
+      parameters: Type.Object({
+        agentId: Type.Optional(Type.String()),
+        limit: Type.Optional(Type.Integer({ minimum: 1 }))
+      }),
+      async execute(_id, params) {
+        try {
+          const runtime = resolveRuntime(pluginConfig, params);
+          await daemonSupervisor.ensureReady(runtime.resolved);
+          const engine = runtime.backend;
+          return jsonResult(await engine.analyticsReport({ limit: params.limit ?? 10 }));
         } catch (error) {
           return unavailableResult(error);
         }

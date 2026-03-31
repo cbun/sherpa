@@ -39,11 +39,14 @@ function createResolved(storeRoot: string): ResolvedSherpaPluginConfig {
       memoryWrites: false
     },
     advisory: {
-      enabled: false,
+      enabled: true,
       injectThreshold: 0.75,
       maxCandidates: 3,
       maxRisks: 2,
       maxChars: 900
+    },
+    taxonomy: {
+      rules: []
     },
     update: {
       onBoot: true,
@@ -91,7 +94,26 @@ function createResolved(storeRoot: string): ResolvedSherpaPluginConfig {
           "one more thing",
           "unrelated"
         ],
-        maxTitleTokenOverlap: 0.25
+        maxTitleTokenOverlap: 0.25,
+        acknowledgmentPhrases: ["thanks", "thank you", "got it", "sounds good", "ok", "okay", "perfect"],
+        completePhrases: [
+          "that solved it",
+          "that worked",
+          "issue resolved",
+          "problem solved",
+          "we are good",
+          "we're good",
+          "fixed now"
+        ],
+        failPhrases: [
+          "still blocked",
+          "this failed",
+          "that failed",
+          "did not work",
+          "didn't work",
+          "cannot proceed",
+          "can't proceed"
+        ]
       }
     }
   };

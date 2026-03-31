@@ -1,6 +1,8 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 
 import {
+  type AnalyticsReportOptions,
+  type AnalyticsReportResult,
   SherpaEngine,
   type DoctorResult,
   type ExportResult,
@@ -29,6 +31,7 @@ export interface SherpaBackend {
   doctor(): Promise<DoctorResult>;
   exportSnapshot(): Promise<ExportResult>;
   gc(): Promise<GcResult>;
+  analyticsReport(options?: AnalyticsReportOptions): Promise<AnalyticsReportResult>;
   taxonomyReport(options?: TaxonomyReportOptions): Promise<TaxonomyReportResult>;
   workflowState(caseId: string, maxOrder?: number): Promise<WorkflowStateResult>;
   workflowNext(caseId: string, limit?: number): Promise<WorkflowNextResult>;
@@ -74,6 +77,10 @@ class InProcessSherpaBackend implements SherpaBackend {
 
   gc() {
     return this.engine.gc();
+  }
+
+  analyticsReport(options?: AnalyticsReportOptions) {
+    return this.engine.analyticsReport(options);
   }
 
   taxonomyReport(options?: TaxonomyReportOptions) {
@@ -207,6 +214,14 @@ export class CliSherpaBackend implements SherpaBackend {
 
   gc() {
     return this.runJson<GcResult>([...buildCliSharedArgs(this.resolved), "gc"]);
+  }
+
+  analyticsReport(options?: AnalyticsReportOptions) {
+    return this.runJson<AnalyticsReportResult>([
+      ...buildCliSharedArgs(this.resolved),
+      "analytics-report",
+      ...(options?.limit !== undefined ? ["--limit", String(options.limit)] : [])
+    ]);
   }
 
   taxonomyReport(options?: TaxonomyReportOptions) {
@@ -350,6 +365,13 @@ export class HttpSherpaBackend implements SherpaBackend {
 
   gc() {
     return this.call<GcResult>("gc");
+  }
+
+  analyticsReport(options?: AnalyticsReportOptions) {
+    return this.call<AnalyticsReportResult>("analyticsReport", {
+      ...(options?.limit !== undefined ? { limit: options.limit } : {}),
+      ...(options?.asOf !== undefined ? { asOf: options.asOf } : {})
+    });
   }
 
   taxonomyReport(options?: TaxonomyReportOptions) {

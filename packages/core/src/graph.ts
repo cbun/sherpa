@@ -4,6 +4,51 @@ export function stateKeyFromEvents(eventTypes: string[]) {
   return eventTypes.join(" -> ");
 }
 
+const NON_TERMINAL_EVENT_SUFFIXES = [
+  ".started",
+  ".requested",
+  ".received",
+  ".needed",
+  ".granted",
+  ".resumed"
+];
+
+function inferTerminalOutcome(events: SherpaEvent[]): SherpaEvent["outcome"] {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (!event) {
+      continue;
+    }
+
+    if (event.type === "task.completed" || event.type.endsWith(".completed")) {
+      return "success";
+    }
+
+    if (event.type === "task.failed" || event.type.endsWith(".failed")) {
+      return "failure";
+    }
+
+    if (event.type === "task.ended") {
+      return "unknown";
+    }
+  }
+
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (!event || event.outcome === "unknown" || event.type === "session.ended") {
+      continue;
+    }
+
+    if (NON_TERMINAL_EVENT_SUFFIXES.some((suffix) => event.type.endsWith(suffix))) {
+      continue;
+    }
+
+    return event.outcome;
+  }
+
+  return events.at(-1)?.outcome ?? "unknown";
+}
+
 export function buildDerivedRows(events: SherpaEvent[], maxOrder: number) {
   const grouped = new Map<string, SherpaEvent[]>();
 
@@ -50,7 +95,7 @@ export function buildDerivedRows(events: SherpaEvent[], maxOrder: number) {
       return left.eventId.localeCompare(right.eventId);
     });
 
-    const terminalOutcome = ordered.at(-1)?.outcome ?? "unknown";
+    const terminalOutcome = inferTerminalOutcome(ordered);
 
     caseRows.push({
       caseId,

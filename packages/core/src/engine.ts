@@ -87,6 +87,32 @@ function eventualSuccessRate(row: StateEdgeRow) {
   return knownOutcomes === 0 ? null : Number((Number(row.terminal_success_count) / knownOutcomes).toFixed(2));
 }
 
+function eventualFailureRate(row: StateEdgeRow) {
+  const knownOutcomes = Number(row.terminal_success_count) + Number(row.terminal_failure_count);
+  return knownOutcomes === 0 ? null : Number((Number(row.terminal_failure_count) / knownOutcomes).toFixed(2));
+}
+
+function branchScore(params: {
+  row: StateEdgeRow;
+  totalSupport: number;
+  matchedOrder: number;
+  defaultOrder: number;
+}) {
+  const probability = Number(params.row.support) / Math.max(1, params.totalSupport);
+  const successRate = eventualSuccessRate(params.row);
+  const failureRate = eventualFailureRate(params.row);
+  const supportConfidence = Number(params.row.support) / (Number(params.row.support) + 2);
+  const orderConfidence = params.matchedOrder / Math.max(1, params.defaultOrder);
+  const qualityScore =
+    0.55 +
+    0.25 * (successRate ?? 0.5) +
+    0.1 * supportConfidence +
+    0.1 * orderConfidence -
+    0.25 * (failureRate ?? 0);
+
+  return Number((probability * Math.max(0, qualityScore)).toFixed(3));
+}
+
 function relativeRisk(rate: number, baselineRate: number) {
   if (rate <= 0) {
     return 0;
@@ -340,16 +366,46 @@ export class SherpaEngine {
       const match = this.readMatchedEdges(db, state.state);
 
       if (match) {
-        const candidates: WorkflowNextCandidate[] = match.rows.slice(0, limit).map((row) => ({
-          event: row.next_event,
-          probability: Number((Number(row.support) / match.totalSupport).toFixed(2)),
-          support: Number(row.support),
-          successRate: eventualSuccessRate(row),
-          meanTimeToNextMs:
-            Number(row.support) === 0 ? null : Number((Number(row.total_duration_ms) / Number(row.support)).toFixed(0)),
-          matchedOrder: match.matchedOrder,
-          reason: `Matched ${match.matchedOrder}-event suffix with ${row.support} prior observations`
-        }));
+        const candidates: WorkflowNextCandidate[] = match.rows
+          .map((row) => {
+            const successRate = eventualSuccessRate(row);
+            const failureRate = eventualFailureRate(row);
+            const score = branchScore({
+              row,
+              totalSupport: match.totalSupport,
+              matchedOrder: match.matchedOrder,
+              defaultOrder: this.defaultOrder
+            });
+
+            return {
+              event: row.next_event,
+              probability: Number((Number(row.support) / match.totalSupport).toFixed(2)),
+              support: Number(row.support),
+              successRate,
+              failureRate,
+              meanTimeToNextMs:
+                Number(row.support) === 0 ? null : Number((Number(row.total_duration_ms) / Number(row.support)).toFixed(0)),
+              matchedOrder: match.matchedOrder,
+              score,
+              reason: `Matched ${match.matchedOrder}-event suffix with ${row.support} prior observations`
+            };
+          })
+          .sort((left, right) => {
+            if (right.score !== left.score) {
+              return right.score - left.score;
+            }
+
+            if (right.probability !== left.probability) {
+              return right.probability - left.probability;
+            }
+
+            if ((right.successRate ?? -1) !== (left.successRate ?? -1)) {
+              return (right.successRate ?? -1) - (left.successRate ?? -1);
+            }
+
+            return right.support - left.support;
+          })
+          .slice(0, limit);
 
         return {
           caseId,

@@ -189,8 +189,15 @@ describe("SherpaEngine", () => {
       event: "approval.needed",
       probability: 0.33,
       support: 1,
+      successRate: 1,
+      failureRate: 0,
       matchedOrder: 3,
-      meanTimeToNextMs: 60000
+      meanTimeToNextMs: 60000,
+      score: 0.311
+    });
+    expect(next.candidates.at(-1)).toMatchObject({
+      event: "missing.attachment",
+      failureRate: 1
     });
 
     const risks = await engine.workflowRisks("case-current");
@@ -316,7 +323,50 @@ describe("SherpaEngine", () => {
       event: "approval.needed",
       probability: 1,
       matchedOrder: 2,
-      support: 2
+      support: 2,
+      successRate: 1,
+      failureRate: 0
+    });
+  });
+
+  it("derives terminal case outcomes from explicit terminal events instead of trailing session events", async () => {
+    const engine = await createEngine();
+
+    await engine.ingestBatch([
+      {
+        caseId: "case-failed-terminal",
+        ts: "2026-03-30T15:00:00.000Z",
+        source: "openclaw.task",
+        type: "task.started",
+        outcome: "unknown"
+      },
+      {
+        caseId: "case-failed-terminal",
+        ts: "2026-03-30T15:01:00.000Z",
+        source: "openclaw.task",
+        type: "task.failed",
+        outcome: "failure"
+      },
+      {
+        caseId: "case-failed-terminal",
+        ts: "2026-03-30T15:02:00.000Z",
+        source: "openclaw.session",
+        type: "session.ended",
+        outcome: "success"
+      },
+      {
+        caseId: "case-current-terminal",
+        ts: "2026-03-30T16:00:00.000Z",
+        source: "openclaw.task",
+        type: "task.started",
+        outcome: "unknown"
+      }
+    ]);
+
+    const failedRecall = await engine.workflowRecall("case-current-terminal", "failed");
+    expect(failedRecall.paths[0]).toMatchObject({
+      caseId: "case-failed-terminal",
+      outcome: "failure"
     });
   });
 

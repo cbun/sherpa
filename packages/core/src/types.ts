@@ -46,8 +46,10 @@ export interface WorkflowNextCandidate {
   probability: number;
   support: number;
   successRate: number | null;
+  failureRate: number | null;
   meanTimeToNextMs: number | null;
   matchedOrder: number;
+  score: number;
   reason: string;
 }
 

@@ -38,8 +38,10 @@ describe("buildSherpaAdvisory", () => {
             probability: 0.58,
             support: 4,
             successRate: 0.8,
+            failureRate: 0.1,
             meanTimeToNextMs: 60000,
             matchedOrder: 3,
+            score: 0.46,
             reason: "Matched 3-event suffix"
           },
           {
@@ -47,8 +49,10 @@ describe("buildSherpaAdvisory", () => {
             probability: 0.23,
             support: 2,
             successRate: 0.3,
+            failureRate: 0.6,
             meanTimeToNextMs: 120000,
             matchedOrder: 3,
+            score: 0.12,
             reason: "Matched 3-event suffix"
           }
         ]

@@ -373,6 +373,7 @@ program
   .option("--actor-field <name>", "Actor field for CSV or XES imports")
   .option("--csv-delimiter <char>", "CSV delimiter for tabular imports", ",")
   .option("--top-k <n>", "Maximum candidate window for accuracy scoring", "3")
+  .option("--max-misses <n>", "Maximum number of miss examples to include in the report", "25")
   .action(async (options, command) => {
     const globals = command.optsWithGlobals() as {
       root?: string;
@@ -396,7 +397,8 @@ program
       ...(globals.minOrder ? { minOrder: parseInteger(globals.minOrder, "--min-order") } : {}),
       ...(globals.maxOrder ? { maxOrder: parseInteger(globals.maxOrder, "--max-order") } : {}),
       ...(globals.minSupport ? { minSupport: parseInteger(globals.minSupport, "--min-support") } : {}),
-      topK: parseInteger(options.topK, "--top-k")
+      topK: parseInteger(options.topK, "--top-k"),
+      maxMisses: parseInteger(options.maxMisses, "--max-misses")
     });
     printJson(report);
   });

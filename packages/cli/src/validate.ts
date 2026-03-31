@@ -25,6 +25,15 @@ export interface ValidationMiss {
   predicted: string[];
 }
 
+export interface ValidationEventBreakdown {
+  event: string;
+  occurrences: number;
+  top1Hits: number;
+  topKHits: number;
+  top1Accuracy: number;
+  topKAccuracy: number;
+}
+
 export interface ValidationReport {
   dataset: {
     name: string;
@@ -38,6 +47,8 @@ export interface ValidationReport {
   nextTop1Accuracy: number;
   nextTopKAccuracy: number;
   topK: number;
+  missCount: number;
+  eventBreakdown: ValidationEventBreakdown[];
   misses: ValidationMiss[];
 }
 
@@ -392,13 +403,16 @@ export async function runValidationDataset(
     maxOrder?: number;
     minSupport?: number;
     topK?: number;
+    maxMisses?: number;
   }
 ): Promise<ValidationReport> {
   const topK = options?.topK ?? 3;
+  const maxMisses = options?.maxMisses ?? 25;
   let evaluatedSteps = 0;
   let top1Hits = 0;
   let topKHits = 0;
   const misses: ValidationMiss[] = [];
+  const eventStats = new Map<string, { occurrences: number; top1Hits: number; topKHits: number }>();
 
   for (const validationCase of dataset.cases) {
     if (validationCase.events.length < 2) {
@@ -439,23 +453,35 @@ export async function runValidationDataset(
         const result = await engine.workflowNext(validationCase.caseId, topK);
         const predicted = result.candidates.map((candidate) => candidate.event);
         const top1 = predicted[0];
+        const eventStat = eventStats.get(expectedNext.type) ?? {
+          occurrences: 0,
+          top1Hits: 0,
+          topKHits: 0
+        };
 
         evaluatedSteps += 1;
+        eventStat.occurrences += 1;
 
         if (top1 === expectedNext.type) {
           top1Hits += 1;
+          eventStat.top1Hits += 1;
         }
 
         if (predicted.includes(expectedNext.type)) {
           topKHits += 1;
+          eventStat.topKHits += 1;
         } else {
-          misses.push({
-            caseId: validationCase.caseId,
-            step: index + 1,
-            expected: expectedNext.type,
-            predicted
-          });
+          if (misses.length < maxMisses) {
+            misses.push({
+              caseId: validationCase.caseId,
+              step: index + 1,
+              expected: expectedNext.type,
+              predicted
+            });
+          }
         }
+
+        eventStats.set(expectedNext.type, eventStat);
       }
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
@@ -477,6 +503,27 @@ export async function runValidationDataset(
     nextTop1Accuracy: evaluatedSteps === 0 ? 0 : top1Hits / evaluatedSteps,
     nextTopKAccuracy: evaluatedSteps === 0 ? 0 : topKHits / evaluatedSteps,
     topK,
+    missCount: evaluatedSteps - topKHits,
+    eventBreakdown: [...eventStats.entries()]
+      .map(([event, stats]) => ({
+        event,
+        occurrences: stats.occurrences,
+        top1Hits: stats.top1Hits,
+        topKHits: stats.topKHits,
+        top1Accuracy: stats.occurrences === 0 ? 0 : stats.top1Hits / stats.occurrences,
+        topKAccuracy: stats.occurrences === 0 ? 0 : stats.topKHits / stats.occurrences
+      }))
+      .sort((left, right) => {
+        if (right.occurrences !== left.occurrences) {
+          return right.occurrences - left.occurrences;
+        }
+
+        if (left.topKAccuracy !== right.topKAccuracy) {
+          return left.topKAccuracy - right.topKAccuracy;
+        }
+
+        return left.event.localeCompare(right.event);
+      }),
     misses
   };
 }
@@ -490,6 +537,7 @@ export async function validateDatasetFile(
     maxOrder?: number;
     minSupport?: number;
     topK?: number;
+    maxMisses?: number;
   }
 ) {
   const dataset = await loadValidationDataset(datasetPath, options);

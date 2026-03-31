@@ -99,6 +99,51 @@ describe("validation harness", () => {
     expect(report.nextTop1Accuracy).toBeLessThanOrEqual(1);
     expect(report.nextTopKAccuracy).toBeGreaterThanOrEqual(report.nextTop1Accuracy);
     expect(report.nextTopKAccuracy).toBeLessThanOrEqual(1);
+    expect(report.missCount).toBe(report.evaluatedSteps - report.eventBreakdown.reduce((sum, row) => sum + row.topKHits, 0));
+    expect(report.eventBreakdown).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          event: "repo.inspected",
+          occurrences: 2
+        }),
+        expect.objectContaining({
+          event: "patch.applied",
+          occurrences: 2
+        })
+      ])
+    );
     expect(report.misses.length).toBeLessThanOrEqual(report.evaluatedSteps);
+  });
+
+  it("caps miss examples while preserving total miss count", async () => {
+    const report = await runValidationDataset(
+      {
+        name: "miss-heavy",
+        cases: [
+          {
+            caseId: "case-1",
+            events: [
+              { caseId: "case-1", source: "tool", type: "a" },
+              { caseId: "case-1", source: "tool", type: "b" },
+              { caseId: "case-1", source: "tool", type: "c" }
+            ]
+          },
+          {
+            caseId: "case-2",
+            events: [
+              { caseId: "case-2", source: "tool", type: "x" },
+              { caseId: "case-2", source: "tool", type: "y" },
+              { caseId: "case-2", source: "tool", type: "z" }
+            ]
+          }
+        ]
+      },
+      {
+        maxMisses: 1
+      }
+    );
+
+    expect(report.missCount).toBeGreaterThanOrEqual(report.misses.length);
+    expect(report.misses).toHaveLength(1);
   });
 });

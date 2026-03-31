@@ -1,0 +1,6 @@
+caseId,ts,type,source,outcome
+csv-1,2026-03-30T10:00:00.000Z,request.received,validation.csv,unknown
+csv-1,2026-03-30T10:01:00.000Z,repo.inspected,validation.csv,unknown
+csv-1,2026-03-30T10:02:00.000Z,task.completed,validation.csv,success
+csv-2,2026-03-30T11:00:00.000Z,request.received,validation.csv,unknown
+csv-2,2026-03-30T11:01:00.000Z,env.blocked,validation.csv,failure

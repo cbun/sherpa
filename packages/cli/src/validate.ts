@@ -2,7 +2,10 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { SherpaEngine, type SherpaEventInput } from "@sherpa/core";
+import { parse as parseCsv } from "csv-parse/sync";
+import { XMLParser } from "fast-xml-parser";
+
+import { SherpaEngine, type SherpaEventInput, type SherpaOutcome } from "@sherpa/core";
 
 export interface ValidationCase {
   caseId: string;
@@ -27,6 +30,7 @@ export interface ValidationReport {
     name: string;
     description: string | null;
     path: string;
+    format: ValidationDatasetFormat;
   };
   cases: number;
   datasetEvents: number;
@@ -35,6 +39,137 @@ export interface ValidationReport {
   nextTopKAccuracy: number;
   topK: number;
   misses: ValidationMiss[];
+}
+
+export type ValidationDatasetFormat = "json" | "jsonl" | "csv" | "xes";
+
+export interface ValidationDatasetLoadOptions {
+  format?: ValidationDatasetFormat | "auto";
+  caseField?: string;
+  typeField?: string;
+  timestampField?: string;
+  outcomeField?: string;
+  sourceField?: string;
+  agentField?: string;
+  actorField?: string;
+  csvDelimiter?: string;
+}
+
+type ValidationRowFields = Required<
+  Pick<
+    ValidationDatasetLoadOptions,
+    "caseField" | "typeField" | "timestampField" | "outcomeField" | "sourceField" | "agentField" | "actorField"
+  >
+>;
+
+const DEFAULT_FIELDS: ValidationRowFields = {
+  caseField: "caseId",
+  typeField: "type",
+  timestampField: "ts",
+  outcomeField: "outcome",
+  sourceField: "source",
+  agentField: "agentId",
+  actorField: "actor"
+};
+
+const XES_DEFAULT_FIELDS: ValidationRowFields = {
+  caseField: "concept:name",
+  typeField: "concept:name",
+  timestampField: "time:timestamp",
+  outcomeField: "outcome",
+  sourceField: "source",
+  agentField: "agentId",
+  actorField: "org:resource"
+};
+
+function arrayify<T>(value: T | T[] | undefined) {
+  if (value === undefined) {
+    return [];
+  }
+
+  return Array.isArray(value) ? value : [value];
+}
+
+function resolveDatasetFormat(datasetPath: string, requested: ValidationDatasetLoadOptions["format"]): ValidationDatasetFormat {
+  if (requested && requested !== "auto") {
+    return requested;
+  }
+
+  if (datasetPath.endsWith(".jsonl")) {
+    return "jsonl";
+  }
+
+  if (datasetPath.endsWith(".csv")) {
+    return "csv";
+  }
+
+  if (datasetPath.endsWith(".xes")) {
+    return "xes";
+  }
+
+  return "json";
+}
+
+function resolveRowFields(options?: ValidationDatasetLoadOptions, format?: ValidationDatasetFormat): ValidationRowFields {
+  const defaults = format === "xes" ? XES_DEFAULT_FIELDS : DEFAULT_FIELDS;
+
+  return {
+    caseField: options?.caseField ?? defaults.caseField,
+    typeField: options?.typeField ?? defaults.typeField,
+    timestampField: options?.timestampField ?? defaults.timestampField,
+    outcomeField: options?.outcomeField ?? defaults.outcomeField,
+    sourceField: options?.sourceField ?? defaults.sourceField,
+    agentField: options?.agentField ?? defaults.agentField,
+    actorField: options?.actorField ?? defaults.actorField
+  };
+}
+
+function inferOutcome(value: unknown): SherpaOutcome {
+  if (typeof value !== "string") {
+    return "unknown";
+  }
+
+  const normalized = value.trim().toLowerCase();
+
+  if (
+    normalized === "success" ||
+    normalized === "completed" ||
+    normalized === "complete" ||
+    normalized === "done" ||
+    normalized === "passed" ||
+    normalized === "pass"
+  ) {
+    return "success";
+  }
+
+  if (
+    normalized === "failure" ||
+    normalized === "failed" ||
+    normalized === "error" ||
+    normalized === "blocked" ||
+    normalized === "cancelled" ||
+    normalized === "canceled"
+  ) {
+    return "failure";
+  }
+
+  return "unknown";
+}
+
+function sortCases(cases: ValidationCase[]) {
+  return cases.map((validationCase) => ({
+    ...validationCase,
+    events: [...validationCase.events].sort((left, right) => {
+      const leftTs = left.ts ?? "";
+      const rightTs = right.ts ?? "";
+
+      if (leftTs !== rightTs) {
+        return leftTs.localeCompare(rightTs);
+      }
+
+      return String(left.type).localeCompare(String(right.type));
+    })
+  }));
 }
 
 function groupEventsByCase(events: SherpaEventInput[]): ValidationCase[] {
@@ -54,10 +189,12 @@ function groupEventsByCase(events: SherpaEventInput[]): ValidationCase[] {
     }
   }
 
-  return [...grouped.entries()].map(([caseId, caseEvents]) => ({
-    caseId,
-    events: caseEvents
-  }));
+  return sortCases(
+    [...grouped.entries()].map(([caseId, caseEvents]) => ({
+      caseId,
+      events: caseEvents
+    }))
+  );
 }
 
 function normalizeCaseEvents(validationCase: Record<string, unknown>) {
@@ -76,10 +213,117 @@ function normalizeCaseEvents(validationCase: Record<string, unknown>) {
   };
 }
 
-export async function loadValidationDataset(datasetPath: string): Promise<ValidationDataset> {
-  const raw = await fs.readFile(datasetPath, "utf8");
+function normalizeDelimitedRows(rows: Array<Record<string, unknown>>, fields: ValidationRowFields) {
+  return rows.map((row, index) => {
+    const caseId = String(row[fields.caseField] ?? "").trim();
+    const type = String(row[fields.typeField] ?? "").trim();
 
-  if (datasetPath.endsWith(".jsonl")) {
+    if (!caseId) {
+      throw new Error(`Validation row ${index + 1} is missing ${fields.caseField}`);
+    }
+
+    if (!type) {
+      throw new Error(`Validation row ${index + 1} is missing ${fields.typeField}`);
+    }
+
+    return {
+      caseId,
+      type,
+      source: String(row[fields.sourceField] ?? "validation.import").trim() || "validation.import",
+      ...(typeof row[fields.timestampField] === "string" && String(row[fields.timestampField]).trim().length > 0
+        ? { ts: String(row[fields.timestampField]).trim() }
+        : {}),
+      ...(typeof row[fields.agentField] === "string" && String(row[fields.agentField]).trim().length > 0
+        ? { agentId: String(row[fields.agentField]).trim() }
+        : {}),
+      ...(typeof row[fields.actorField] === "string" && String(row[fields.actorField]).trim().length > 0
+        ? { actor: String(row[fields.actorField]).trim() }
+        : {}),
+      outcome: inferOutcome(row[fields.outcomeField])
+    } satisfies SherpaEventInput;
+  });
+}
+
+function xesAttributes(node: Record<string, unknown>) {
+  const attributes: Record<string, string> = {};
+
+  for (const tag of ["string", "date", "int", "float", "boolean"] as const) {
+    for (const entry of arrayify(node[tag] as Array<Record<string, unknown>> | Record<string, unknown> | undefined)) {
+      const key = typeof entry.key === "string" ? entry.key : null;
+      const value = typeof entry.value === "string" ? entry.value : entry.value === undefined ? null : String(entry.value);
+
+      if (key && value !== null) {
+        attributes[key] = value;
+      }
+    }
+  }
+
+  return attributes;
+}
+
+function parseXesDataset(raw: string, fields: ValidationRowFields) {
+  const parser = new XMLParser({
+    ignoreAttributes: false,
+    attributeNamePrefix: ""
+  });
+  const parsed = parser.parse(raw) as {
+    log?: {
+      trace?: Array<Record<string, unknown>> | Record<string, unknown>;
+    };
+  };
+
+  const traces = arrayify(parsed.log?.trace);
+  const events: SherpaEventInput[] = [];
+
+  for (const trace of traces) {
+    const traceAttributes = xesAttributes(trace);
+    const caseId = traceAttributes[fields.caseField] ?? traceAttributes["concept:name"];
+
+    if (!caseId) {
+      throw new Error("XES trace is missing concept:name");
+    }
+
+    for (const eventNode of arrayify(trace.event as Array<Record<string, unknown>> | Record<string, unknown> | undefined)) {
+      const eventAttributes = xesAttributes(eventNode);
+      const type = eventAttributes[fields.typeField] ?? eventAttributes["concept:name"];
+
+      if (!type) {
+        continue;
+      }
+
+      const source =
+        eventAttributes[fields.sourceField] ??
+        traceAttributes[fields.sourceField] ??
+        "validation.import";
+      const outcomeSource =
+        eventAttributes[fields.outcomeField] ??
+        eventAttributes["lifecycle:transition"] ??
+        type;
+
+      events.push({
+        caseId,
+        type,
+        source,
+        ...(eventAttributes[fields.timestampField] ? { ts: eventAttributes[fields.timestampField] } : {}),
+        ...(eventAttributes[fields.agentField] ? { agentId: eventAttributes[fields.agentField] } : {}),
+        ...(eventAttributes[fields.actorField] ? { actor: eventAttributes[fields.actorField] } : {}),
+        outcome: inferOutcome(outcomeSource)
+      });
+    }
+  }
+
+  return events;
+}
+
+export async function loadValidationDataset(
+  datasetPath: string,
+  options?: ValidationDatasetLoadOptions
+): Promise<ValidationDataset & { format: ValidationDatasetFormat }> {
+  const raw = await fs.readFile(datasetPath, "utf8");
+  const format = resolveDatasetFormat(datasetPath, options?.format);
+  const fields = resolveRowFields(options, format);
+
+  if (format === "jsonl") {
     const events = raw
       .split(/\r?\n/)
       .map((line) => line.trim())
@@ -88,7 +332,30 @@ export async function loadValidationDataset(datasetPath: string): Promise<Valida
 
     return {
       name: path.basename(datasetPath, path.extname(datasetPath)),
+      format,
       cases: groupEventsByCase(events)
+    };
+  }
+
+  if (format === "csv") {
+    const rows = parseCsv(raw, {
+      columns: true,
+      skip_empty_lines: true,
+      delimiter: options?.csvDelimiter ?? ","
+    }) as Array<Record<string, unknown>>;
+
+    return {
+      name: path.basename(datasetPath, path.extname(datasetPath)),
+      format,
+      cases: groupEventsByCase(normalizeDelimitedRows(rows, fields))
+    };
+  }
+
+  if (format === "xes") {
+    return {
+      name: path.basename(datasetPath, path.extname(datasetPath)),
+      format,
+      cases: groupEventsByCase(parseXesDataset(raw, fields))
     };
   }
 
@@ -103,6 +370,7 @@ export async function loadValidationDataset(datasetPath: string): Promise<Valida
   if (Array.isArray(parsed)) {
     return {
       name: path.basename(datasetPath, path.extname(datasetPath)),
+      format,
       cases: groupEventsByCase(parsed)
     };
   }
@@ -110,7 +378,8 @@ export async function loadValidationDataset(datasetPath: string): Promise<Valida
   return {
     name: parsed.name ?? path.basename(datasetPath, path.extname(datasetPath)),
     ...(parsed.description ? { description: parsed.description } : {}),
-    cases: Array.isArray(parsed.cases) ? parsed.cases.map(normalizeCaseEvents) : []
+    format,
+    cases: sortCases(Array.isArray(parsed.cases) ? parsed.cases.map(normalizeCaseEvents) : [])
   };
 }
 
@@ -159,12 +428,13 @@ export async function runValidationDataset(
       }
 
       for (let index = 0; index < validationCase.events.length - 1; index += 1) {
-        await engine.ingest(validationCase.events[index] as SherpaEventInput);
-
+        const current = validationCase.events[index];
         const expectedNext = validationCase.events[index + 1];
-        if (!expectedNext) {
+        if (!current || !expectedNext) {
           continue;
         }
+
+        await engine.ingest(current as SherpaEventInput);
 
         const result = await engine.workflowNext(validationCase.caseId, topK);
         const predicted = result.candidates.map((candidate) => candidate.event);
@@ -198,7 +468,8 @@ export async function runValidationDataset(
     dataset: {
       name: dataset.name,
       description: dataset.description ?? null,
-      path: ""
+      path: "",
+      format: "json"
     },
     cases: dataset.cases.length,
     datasetEvents,
@@ -212,7 +483,7 @@ export async function runValidationDataset(
 
 export async function validateDatasetFile(
   datasetPath: string,
-  options?: {
+  options?: ValidationDatasetLoadOptions & {
     rootParent?: string;
     defaultOrder?: number;
     minOrder?: number;
@@ -221,14 +492,15 @@ export async function validateDatasetFile(
     topK?: number;
   }
 ) {
-  const dataset = await loadValidationDataset(datasetPath);
+  const dataset = await loadValidationDataset(datasetPath, options);
   const report = await runValidationDataset(dataset, options);
 
   return {
     ...report,
     dataset: {
       ...report.dataset,
-      path: datasetPath
+      path: datasetPath,
+      format: dataset.format
     }
   };
 }

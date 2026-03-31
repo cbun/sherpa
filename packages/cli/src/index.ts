@@ -363,6 +363,15 @@ program
   .command("validate")
   .description("Run next-step validation against a canonical Sherpa dataset")
   .option("--dataset <file>", "JSON or JSONL validation dataset", path.join(process.cwd(), "fixtures/validation/synthetic-workflows.json"))
+  .option("--format <format>", "auto, json, jsonl, csv, or xes", "auto")
+  .option("--case-field <name>", "Case identifier field for CSV or XES imports")
+  .option("--type-field <name>", "Event type field for CSV or XES imports")
+  .option("--timestamp-field <name>", "Timestamp field for CSV or XES imports")
+  .option("--outcome-field <name>", "Outcome field for CSV or XES imports")
+  .option("--source-field <name>", "Event source field for CSV or XES imports")
+  .option("--agent-field <name>", "Agent identifier field for CSV or XES imports")
+  .option("--actor-field <name>", "Actor field for CSV or XES imports")
+  .option("--csv-delimiter <char>", "CSV delimiter for tabular imports", ",")
   .option("--top-k <n>", "Maximum candidate window for accuracy scoring", "3")
   .action(async (options, command) => {
     const globals = command.optsWithGlobals() as {
@@ -374,6 +383,15 @@ program
     };
     const report = await validateDatasetFile(options.dataset, {
       rootParent: globals.root ?? defaultRoot(),
+      format: options.format,
+      ...(options.caseField ? { caseField: options.caseField } : {}),
+      ...(options.typeField ? { typeField: options.typeField } : {}),
+      ...(options.timestampField ? { timestampField: options.timestampField } : {}),
+      ...(options.outcomeField ? { outcomeField: options.outcomeField } : {}),
+      ...(options.sourceField ? { sourceField: options.sourceField } : {}),
+      ...(options.agentField ? { agentField: options.agentField } : {}),
+      ...(options.actorField ? { actorField: options.actorField } : {}),
+      ...(options.csvDelimiter ? { csvDelimiter: options.csvDelimiter } : {}),
       ...(globals.defaultOrder ? { defaultOrder: parseInteger(globals.defaultOrder, "--default-order") } : {}),
       ...(globals.minOrder ? { minOrder: parseInteger(globals.minOrder, "--min-order") } : {}),
       ...(globals.maxOrder ? { maxOrder: parseInteger(globals.maxOrder, "--max-order") } : {}),

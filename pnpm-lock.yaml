@@ -35,6 +35,12 @@ importers:
       commander:
         specifier: ^14.0.3
         version: 14.0.3
+      csv-parse:
+        specifier: ^5.6.0
+        version: 5.6.0
+      fast-xml-parser:
+        specifier: ^5.2.5
+        version: 5.5.8
 
   packages/core:
     dependencies:
@@ -1689,6 +1695,9 @@ packages:
 
   cssom@0.5.0:
     resolution: {integrity: sha512-iKuQcq+NdHqlAcwUY0o/HL69XQrUaQdMjmStJ8JFmUaiiQErlhrmuigkg/CU4E2J0IyUKUrMAgl36TvN67MqTw==}
+
+  csv-parse@5.6.0:
+    resolution: {integrity: sha512-l3nz3euub2QMg5ouu5U09Ew9Wf6/wQ8I++ch1loQ0ljmzhmfZYrH9fflS22i/PQEvsPvxCwxgz5q7UB8K1JO4Q==}
 
   data-uri-to-buffer@4.0.1:
     resolution: {integrity: sha512-0R9ikRb668HB7QDxT1vkpuUBtqc53YyAwMwGeUFKRojY/NWKvdZ+9UYtRfGmhqNbRkTSVpMbmyhXipFFv2cb/A==}
@@ -5254,6 +5263,8 @@ snapshots:
   css-what@6.2.2: {}
 
   cssom@0.5.0: {}
+
+  csv-parse@5.6.0: {}
 
   data-uri-to-buffer@4.0.1: {}
 

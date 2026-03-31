@@ -30,6 +30,38 @@ describe("validation harness", () => {
     }
   });
 
+  it("loads CSV datasets using column headers", async () => {
+    const dataset = await loadValidationDataset(
+      path.join(process.cwd(), "fixtures/validation/simple.csv")
+    );
+
+    expect(dataset.format).toBe("csv");
+    expect(dataset.cases).toHaveLength(2);
+    expect(dataset.cases[0]).toMatchObject({
+      caseId: "csv-1"
+    });
+    expect(dataset.cases[0]?.events[2]).toMatchObject({
+      type: "task.completed",
+      outcome: "success"
+    });
+  });
+
+  it("loads XES datasets using standard XES attributes", async () => {
+    const dataset = await loadValidationDataset(
+      path.join(process.cwd(), "fixtures/validation/simple.xes")
+    );
+
+    expect(dataset.format).toBe("xes");
+    expect(dataset.cases).toHaveLength(2);
+    expect(dataset.cases[1]).toMatchObject({
+      caseId: "xes-2"
+    });
+    expect(dataset.cases[1]?.events[1]).toMatchObject({
+      type: "task.failed",
+      outcome: "failure"
+    });
+  });
+
   it("reports next-step accuracy for repeated synthetic traces", async () => {
     const report = await runValidationDataset(
       {

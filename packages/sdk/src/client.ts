@@ -94,6 +94,10 @@ export class SherpaClient {
     return this.engine.collectMetrics();
   }
 
+  trackAdvisoryInjection(): Promise<void> {
+    return this.engine.trackAdvisoryInjection();
+  }
+
   workflowState(caseId: string, maxOrder?: number): Promise<WorkflowStateResult> {
     return this.engine.workflowState(caseId, maxOrder);
   }

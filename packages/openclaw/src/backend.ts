@@ -10,6 +10,7 @@ import {
   type SherpaEngineOptions,
   type SherpaEvent,
   type SherpaEventInput,
+  type SherpaMetrics,
   type TaxonomyReportOptions,
   type TaxonomyReportResult,
   type WorkflowNextResult,
@@ -37,6 +38,8 @@ export interface SherpaBackend {
   workflowNext(caseId: string, limit?: number): Promise<WorkflowNextResult>;
   workflowRisks(caseId: string, limit?: number): Promise<WorkflowRisksResult>;
   workflowRecall(caseId: string, mode?: WorkflowRecallMode, limit?: number): Promise<WorkflowRecallResult>;
+  collectMetrics(): Promise<SherpaMetrics>;
+  trackAdvisoryInjection(): Promise<void>;
 }
 
 export interface SherpaPluginRuntime {
@@ -49,6 +52,14 @@ class InProcessSherpaBackend implements SherpaBackend {
 
   init() {
     return this.engine.init();
+  }
+
+  collectMetrics() {
+    return this.engine.collectMetrics();
+  }
+
+  async trackAdvisoryInjection() {
+    await this.engine.trackAdvisoryInjection();
   }
 
   ingest(event: SherpaEventInput) {
@@ -136,6 +147,8 @@ function collectOutput(child: ChildProcessWithoutNullStreams, stdinText?: string
 }
 
 export class CliSherpaBackend implements SherpaBackend {
+  private _advisoryCount = 0;
+
   constructor(
     private readonly resolved: ResolvedSherpaPluginConfig,
     private readonly spawnImpl: SpawnLike = spawn
@@ -282,6 +295,14 @@ export class CliSherpaBackend implements SherpaBackend {
       ]
     );
   }
+
+  collectMetrics() {
+    return this.runJson<SherpaMetrics>([...buildCliSharedArgs(this.resolved), "metrics"]);
+  }
+
+  async trackAdvisoryInjection() {
+    this._advisoryCount++;
+  }
 }
 
 export function buildCliSharedArgs(resolved: ResolvedSherpaPluginConfig) {
@@ -410,6 +431,14 @@ export class HttpSherpaBackend implements SherpaBackend {
       ...(mode !== undefined ? { mode } : {}),
       ...(limit !== undefined ? { limit } : {})
     });
+  }
+
+  collectMetrics() {
+    return this.call<SherpaMetrics>("collectMetrics");
+  }
+
+  async trackAdvisoryInjection() {
+    await this.call<void>("trackAdvisoryInjection");
   }
 }
 

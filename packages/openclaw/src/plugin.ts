@@ -42,6 +42,9 @@ function detectAgentId(params: { agentId?: string | undefined; caseId?: string |
 
 const runtimeCache = new Map<string, SherpaPluginRuntime>();
 const resolvedConfigCache = new Map<string, ReturnType<typeof resolveSherpaPluginConfig>>();
+const advisoryCooldowns = new Map<string, number>();
+
+const ADVISORY_COOLDOWN_MS = 120_000; // 2 minutes between advisories per case
 
 function resolveRuntime(
   config: SherpaPluginConfig | undefined,
@@ -453,6 +456,12 @@ export default definePluginEntry({
         }) ?? `session:${ctx.sessionKey}`;
 
       try {
+        // Cooldown: don't fire advisory for the same case within 2 minutes
+        const lastAdvisory = advisoryCooldowns.get(caseId);
+        if (lastAdvisory && Date.now() - lastAdvisory < ADVISORY_COOLDOWN_MS) {
+          return;
+        }
+
         const runtime = resolveRuntime(pluginConfig, {
           agentId: decision.agentId,
           caseId
@@ -473,6 +482,14 @@ export default definePluginEntry({
 
         if (!advisory) {
           return;
+        }
+
+        // Track advisory injection count + cooldown
+        advisoryCooldowns.set(caseId, Date.now());
+        try {
+          await runtime.backend.trackAdvisoryInjection();
+        } catch {
+          // Non-critical — don't block the advisory
         }
 
         return {
@@ -770,6 +787,25 @@ export default definePluginEntry({
               ...(typeof params.limit === "number" ? { limit: params.limit } : {})
             })
           );
+        } catch (error) {
+          return unavailableResult(error);
+        }
+      }
+    });
+
+    api.registerTool({
+      name: "workflow_metrics",
+      label: "Workflow Metrics",
+      description: "Collect adoption, quality, efficiency, and reliability metrics for the Sherpa instance",
+      parameters: Type.Object({
+        agentId: Type.Optional(Type.String())
+      }),
+      async execute(_id, params) {
+        try {
+          const runtime = resolveRuntime(pluginConfig, params);
+          await daemonSupervisor.ensureReady(runtime.resolved);
+          const engine = runtime.backend;
+          return jsonResult(await engine.collectMetrics());
         } catch (error) {
           return unavailableResult(error);
         }

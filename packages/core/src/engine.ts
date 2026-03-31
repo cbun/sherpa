@@ -616,6 +616,13 @@ export class SherpaEngine {
     });
   }
 
+  async trackAdvisoryInjection(): Promise<void> {
+    await this.init();
+    await withGraphStore(this.paths.graphPath, (db) => {
+      incrementMetadata(db, "advisoryInjections");
+    });
+  }
+
   async taxonomyReport(options: TaxonomyReportOptions = {}): Promise<TaxonomyReportResult> {
     await this.init();
 

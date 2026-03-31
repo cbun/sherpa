@@ -118,7 +118,7 @@ node packages/mcp/dist/http.js --agent-id main --host 127.0.0.1 --port 8787
 - The current implementation rebuilds the derived graph from the ledger on each ingest or ingest batch. That keeps the source of truth simple now; incremental updates can come later.
 - The engine now supports minimum-support variable-order backoff, richer status/freshness reporting, JSON snapshot export, and graph maintenance via `gc`.
 - Risk and recall are still alpha-grade heuristics built from eventual case outcomes and suffix matching; they are useful now, but not yet the final retrieval model described in the PRD.
-- The OpenClaw package now captures session lifecycle, inbound dispatch, and tool lifecycle events with redacted-by-default metadata, debounced per-store batching, periodic maintenance, conservative scope rules, ignore/stateless session patterns, explicit task-boundary case splitting from configurable markers, automatic task starts on the first meaningful user message or after a configurable idle timeout, optional bounded advisory injection, and structured degraded responses when the backend is unavailable.
+- The OpenClaw package now captures session lifecycle, inbound dispatch, and tool lifecycle events with redacted-by-default metadata, debounced per-store batching, periodic maintenance, conservative scope rules, ignore/stateless session patterns, explicit task-boundary case splitting from configurable markers, automatic task starts on the first meaningful user message, rotation after a configurable idle timeout, conservative intent-shift splitting from transition phrases plus low token overlap, optional bounded advisory injection, and structured degraded responses when the backend is unavailable.
 - The MCP package now supports stdio plus a minimal stateless streamable HTTP deployment path with a `/health` endpoint for local sidecar/service use.
 
 ## Research Direction
@@ -161,7 +161,7 @@ That leads to a few practical implementation rules:
 
 - Add OpenClaw richer automatic case splitting beyond explicit boundaries
 - Improve recall/risk scoring beyond the current heuristic layer
-- Add better automatic boundary heuristics beyond first-message and idle-timeout rules
+- Improve automatic boundary heuristics beyond phrase and token-overlap rules
 - Define a validation harness using synthetic workflow traces and real event-log datasets
 - Add CI under `.github/workflows/`
 - Add release/versioning automation once package boundaries settle

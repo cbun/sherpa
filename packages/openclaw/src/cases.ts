@@ -16,13 +16,57 @@ export type TaskBoundary = {
   caseId: string;
   title: string;
   slug: string;
-  reason: "explicit" | "auto-first-message" | "auto-idle-timeout";
+  reason: "explicit" | "auto-first-message" | "auto-idle-timeout" | "auto-intent-shift";
 };
 
 type ActiveCaseState = {
   caseId: string;
   lastMessageAt: number;
+  title: string;
+  titleTokens: string[];
 };
+
+const STOP_WORDS = new Set([
+  "a",
+  "an",
+  "and",
+  "are",
+  "at",
+  "be",
+  "by",
+  "can",
+  "for",
+  "from",
+  "help",
+  "i",
+  "if",
+  "in",
+  "into",
+  "is",
+  "it",
+  "me",
+  "my",
+  "of",
+  "on",
+  "or",
+  "our",
+  "please",
+  "the",
+  "this",
+  "to",
+  "us",
+  "we",
+  "with",
+  "you"
+]);
+
+function tokenize(value: string) {
+  return value
+    .toLowerCase()
+    .split(/[^a-z0-9]+/g)
+    .filter((token) => token.length >= 3 && !STOP_WORDS.has(token))
+    .slice(0, 16);
+}
 
 export class SherpaCaseRouter {
   private readonly activeCases = new Map<string, ActiveCaseState>();
@@ -95,6 +139,37 @@ export class SherpaCaseRouter {
     return trimmed.slice(0, 72);
   }
 
+  private computeTokenOverlap(left: string[], right: string[]) {
+    if (left.length === 0 || right.length === 0) {
+      return 0;
+    }
+
+    const rightSet = new Set(right);
+    const shared = left.filter((token) => rightSet.has(token)).length;
+    return shared / Math.max(left.length, right.length);
+  }
+
+  private detectShiftPhrase(content: string) {
+    const lowered = content.trim().toLowerCase();
+
+    for (const phrase of this.config.caseSplitting.auto.shiftPhrases) {
+      const normalized = phrase.trim().toLowerCase();
+      if (!normalized) {
+        continue;
+      }
+
+      if (
+        lowered.startsWith(normalized) ||
+        lowered.startsWith(`${normalized}:`) ||
+        lowered.startsWith(`${normalized},`)
+      ) {
+        return normalized;
+      }
+    }
+
+    return null;
+  }
+
   private detectAutomaticBoundary(params: {
     sessionKey: string;
     content: string;
@@ -126,6 +201,20 @@ export class SherpaCaseRouter {
         reason: "auto-idle-timeout" as const,
         timestamp
       };
+    }
+
+    const shiftPhrase = this.detectShiftPhrase(params.content);
+    if (shiftPhrase) {
+      const contentTokens = tokenize(normalizedTitle);
+      const overlap = this.computeTokenOverlap(current.titleTokens, contentTokens);
+
+      if (overlap <= this.config.caseSplitting.auto.maxTitleTokenOverlap) {
+        return {
+          title: normalizedTitle,
+          reason: "auto-intent-shift" as const,
+          timestamp
+        };
+      }
     }
 
     this.activeCases.set(params.sessionKey, {
@@ -185,7 +274,9 @@ export class SherpaCaseRouter {
 
     this.activeCases.set(sessionKey, {
       caseId,
-      lastMessageAt: timestamp
+      lastMessageAt: timestamp,
+      title,
+      titleTokens: tokenize(title)
     });
 
     return {
@@ -225,7 +316,9 @@ export class SherpaCaseRouter {
 
     this.activeCases.set(sessionKey, {
       caseId,
-      lastMessageAt: suffix
+      lastMessageAt: suffix,
+      title,
+      titleTokens: tokenize(title)
     });
 
     return {

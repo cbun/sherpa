@@ -96,6 +96,58 @@ describe("SherpaCaseRouter", () => {
     });
   });
 
+  it("rotates to a new automatic case on a strong intent-shift signal with low topic overlap", () => {
+    const config = resolveSherpaPluginConfig(undefined, { agentId: "alpha" });
+    const router = new SherpaCaseRouter(config);
+    const policy = resolveSherpaPolicyDecision(config, {
+      sessionKey: "agent:alpha:telegram:direct:user-1"
+    });
+
+    router.routeDispatch({
+      policy,
+      sessionKey: "agent:alpha:telegram:direct:user-1",
+      content: "Investigate the deployment error in production.",
+      timestamp: 1_000
+    });
+
+    const dispatch = router.routeDispatch({
+      policy,
+      sessionKey: "agent:alpha:telegram:direct:user-1",
+      content: "Switching gears: draft the customer renewal email.",
+      timestamp: 5_000
+    });
+
+    expect(dispatch.boundary).toMatchObject({
+      reason: "auto-intent-shift",
+      title: "Switching gears: draft the customer renewal email"
+    });
+  });
+
+  it("does not rotate on a shift phrase when the topic still overlaps strongly", () => {
+    const config = resolveSherpaPluginConfig(undefined, { agentId: "alpha" });
+    const router = new SherpaCaseRouter(config);
+    const policy = resolveSherpaPolicyDecision(config, {
+      sessionKey: "agent:alpha:telegram:direct:user-1"
+    });
+
+    const first = router.routeDispatch({
+      policy,
+      sessionKey: "agent:alpha:telegram:direct:user-1",
+      content: "Investigate the deployment error in production.",
+      timestamp: 1_000
+    });
+
+    const second = router.routeDispatch({
+      policy,
+      sessionKey: "agent:alpha:telegram:direct:user-1",
+      content: "Switching gears: deployment rollback options for production.",
+      timestamp: 5_000
+    });
+
+    expect(second.boundary).toBeNull();
+    expect(second.caseId).toBe(first.caseId);
+  });
+
   it("does not open explicit cases when case splitting is disabled", () => {
     const config = resolveSherpaPluginConfig(
       {

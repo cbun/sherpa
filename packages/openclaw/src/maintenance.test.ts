@@ -64,7 +64,21 @@ function createResolved(storeRoot: string): ResolvedSherpaPluginConfig {
         enabled: true,
         idleTimeout: "30m",
         idleTimeoutMs: 1800000,
-        minContentChars: 24
+        minContentChars: 24,
+        shiftPhrases: [
+          "switching gears",
+          "separate task",
+          "separately",
+          "another task",
+          "another request",
+          "different issue",
+          "different question",
+          "new issue",
+          "new topic",
+          "one more thing",
+          "unrelated"
+        ],
+        maxTitleTokenOverlap: 0.25
       }
     }
   };

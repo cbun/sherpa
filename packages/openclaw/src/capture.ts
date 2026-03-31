@@ -52,7 +52,7 @@ type TaskStartCaptureInput = {
   sessionKey?: string | undefined;
   title: string;
   slug: string;
-  reason?: "explicit" | "auto-first-message" | "auto-idle-timeout";
+  reason?: "explicit" | "auto-first-message" | "auto-idle-timeout" | "auto-intent-shift";
   timestamp?: number | undefined;
 };
 

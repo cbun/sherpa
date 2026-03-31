@@ -54,6 +54,8 @@ export interface SherpaPluginConfig {
       enabled?: boolean;
       idleTimeout?: string;
       minContentChars?: number;
+      shiftPhrases?: string[];
+      maxTitleTokenOverlap?: number;
     };
   };
   capture?: {
@@ -119,6 +121,8 @@ export interface ResolvedSherpaPluginConfig {
       idleTimeout: string;
       idleTimeoutMs: number;
       minContentChars: number;
+      shiftPhrases: string[];
+      maxTitleTokenOverlap: number;
     };
   };
 }
@@ -239,7 +243,21 @@ export function resolveSherpaPluginConfig(
         enabled: config?.caseSplitting?.auto?.enabled ?? true,
         idleTimeout: config?.caseSplitting?.auto?.idleTimeout ?? "30m",
         idleTimeoutMs: parseDurationMs(config?.caseSplitting?.auto?.idleTimeout, 1_800_000),
-        minContentChars: config?.caseSplitting?.auto?.minContentChars ?? 24
+        minContentChars: config?.caseSplitting?.auto?.minContentChars ?? 24,
+        shiftPhrases: config?.caseSplitting?.auto?.shiftPhrases ?? [
+          "switching gears",
+          "separate task",
+          "separately",
+          "another task",
+          "another request",
+          "different issue",
+          "different question",
+          "new issue",
+          "new topic",
+          "one more thing",
+          "unrelated"
+        ],
+        maxTitleTokenOverlap: config?.caseSplitting?.auto?.maxTitleTokenOverlap ?? 0.25
       }
     }
   };

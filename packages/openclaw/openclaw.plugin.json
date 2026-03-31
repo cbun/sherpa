@@ -116,7 +116,25 @@
             "properties": {
               "enabled": { "type": "boolean", "default": true },
               "idleTimeout": { "type": "string", "default": "30m" },
-              "minContentChars": { "type": "integer", "minimum": 1, "default": 24 }
+              "minContentChars": { "type": "integer", "minimum": 1, "default": 24 },
+              "shiftPhrases": {
+                "type": "array",
+                "items": { "type": "string" },
+                "default": [
+                  "switching gears",
+                  "separate task",
+                  "separately",
+                  "another task",
+                  "another request",
+                  "different issue",
+                  "different question",
+                  "new issue",
+                  "new topic",
+                  "one more thing",
+                  "unrelated"
+                ]
+              },
+              "maxTitleTokenOverlap": { "type": "number", "minimum": 0, "maximum": 1, "default": 0.25 }
             }
           }
         }
@@ -199,6 +217,12 @@
     },
     "caseSplitting.auto.minContentChars": {
       "label": "Auto Split Min Chars"
+    },
+    "caseSplitting.auto.shiftPhrases": {
+      "label": "Auto Split Shift Phrases"
+    },
+    "caseSplitting.auto.maxTitleTokenOverlap": {
+      "label": "Auto Split Max Token Overlap"
     },
     "capture.messages": {
       "label": "Capture Messages"

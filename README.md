@@ -119,6 +119,7 @@ node packages/mcp/dist/http.js --agent-id main --host 127.0.0.1 --port 8787
 - The engine now supports minimum-support variable-order backoff, richer status/freshness reporting, JSON snapshot export, and graph maintenance via `gc`.
 - Risk and recall are still alpha-grade heuristics built from eventual case outcomes and suffix matching; they are useful now, but not yet the final retrieval model described in the PRD.
 - The OpenClaw package now captures session lifecycle, inbound dispatch, and tool lifecycle events with redacted-by-default metadata, debounced per-store batching, periodic maintenance, conservative scope rules, ignore/stateless session patterns, explicit task-boundary case splitting from configurable markers, explicit task completion/failure markers, automatic task starts on the first meaningful user message, rotation after a configurable idle timeout, conservative intent-shift splitting from transition phrases plus low token overlap, terminal task events when tasks are superseded or the session ends, optional bounded advisory injection, structured degraded responses when the backend is unavailable, and a configurable backend transport that can run embedded or shell out to the Sherpa CLI.
+- The OpenClaw package now captures session lifecycle, inbound dispatch, and tool lifecycle events with redacted-by-default metadata, debounced per-store batching, conservative scope rules, ignore/stateless session patterns, explicit task-boundary case splitting from configurable markers, explicit task completion/failure markers, automatic task starts on the first meaningful user message, rotation after a configurable idle timeout, conservative intent-shift splitting from transition phrases plus low token overlap, terminal task events when tasks are superseded or the session ends, stale active-case expiry so old tasks do not leak into later prompts or tool calls, optional bounded advisory injection, structured degraded responses when the backend is unavailable, and a configurable backend transport that can run embedded or shell out to the Sherpa CLI.
 - The MCP package now supports stdio plus a minimal stateless streamable HTTP deployment path with a `/health` endpoint for local sidecar/service use.
 - The CLI now supports `ingest-batch` so subprocess transports can flush event bursts efficiently.
 - `workflow_status` in the native plugin now reports plugin transport and capture/scope diagnostics in addition to core backend freshness.
@@ -163,7 +164,7 @@ That leads to a few practical implementation rules:
 
 - Improve recall/risk scoring beyond the current heuristic layer
 - Improve automatic boundary heuristics beyond phrase and token-overlap rules
-- Add stronger outcome and stale-case handling beyond explicit terminal markers and session-end cleanup
+- Add stronger outcome handling beyond explicit terminal markers, session-end cleanup, and stale active-case expiry
 - Add a warm long-lived daemon transport for the OpenClaw plugin beyond embedded and one-shot CLI subprocess execution
 - Define a validation harness using synthetic workflow traces and real event-log datasets
 - Add CI under `.github/workflows/`

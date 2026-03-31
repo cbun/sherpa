@@ -24,7 +24,7 @@ export type TaskTerminal = {
   title: string;
   slug: string;
   terminalType: "task.completed" | "task.failed" | "task.ended";
-  reason: "explicit-complete" | "explicit-fail" | "session-end" | "superseded";
+  reason: "explicit-complete" | "explicit-fail" | "session-end" | "superseded" | "stale-timeout";
 };
 
 type ActiveCaseState = {
@@ -87,6 +87,27 @@ export class SherpaCaseRouter {
     return normalized || null;
   }
 
+  private expireStaleCase(sessionKey: string, timestamp?: number | undefined) {
+    const current = this.activeCases.get(sessionKey);
+    if (!current) {
+      return null;
+    }
+
+    const now = typeof timestamp === "number" ? timestamp : Date.now();
+    if (now - current.lastMessageAt < this.config.caseSplitting.auto.staleTimeoutMs) {
+      return null;
+    }
+
+    this.activeCases.delete(sessionKey);
+    return {
+      caseId: current.caseId,
+      title: current.title,
+      slug: current.slug,
+      terminalType: "task.ended" as const,
+      reason: "stale-timeout" as const
+    };
+  }
+
   resolveActiveCaseId(params: {
     policy: SherpaPolicyDecision;
     sessionKey?: string | undefined;
@@ -104,6 +125,7 @@ export class SherpaCaseRouter {
       return undefined;
     }
 
+    this.expireStaleCase(sessionKey, params.timestamp);
     return this.activeCases.get(sessionKey)?.caseId;
   }
 
@@ -283,6 +305,7 @@ export class SherpaCaseRouter {
       };
     }
 
+    const staleTerminal = this.expireStaleCase(sessionKey, params.timestamp);
     const current = this.activeCases.get(sessionKey) ?? null;
     const terminalMarker = this.detectTerminalMarker(params.content);
     if (terminalMarker && current) {
@@ -319,7 +342,7 @@ export class SherpaCaseRouter {
     if (!title || !reason) {
       return {
         boundary: null,
-        terminal: null,
+        terminal: staleTerminal,
         caseId: current?.caseId ?? null
       };
     }
@@ -328,7 +351,8 @@ export class SherpaCaseRouter {
     const timestamp = automaticBoundary?.timestamp ?? (typeof params.timestamp === "number" ? params.timestamp : Date.now());
     const caseId = `session:${sessionKey}:task:${slug}:${timestamp}`;
     const terminal =
-      current && current.caseId !== caseId
+      staleTerminal ??
+      (current && current.caseId !== caseId
         ? {
             caseId: current.caseId,
             title: current.title,
@@ -336,7 +360,7 @@ export class SherpaCaseRouter {
             terminalType: "task.ended" as const,
             reason: "superseded" as const
           }
-        : null;
+        : null);
 
     this.activeCases.set(sessionKey, {
       caseId,
@@ -409,7 +433,7 @@ export class SherpaCaseRouter {
 
   closeActiveCase(params: {
     sessionKey?: string | undefined;
-    reason: "session-end" | "superseded";
+    reason: "session-end" | "superseded" | "stale-timeout";
   }): TaskTerminal | null {
     const sessionKey = this.normalizedSessionKey(params.sessionKey);
     if (!sessionKey) {

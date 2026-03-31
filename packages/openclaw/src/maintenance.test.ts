@@ -73,6 +73,8 @@ function createResolved(storeRoot: string): ResolvedSherpaPluginConfig {
         enabled: true,
         idleTimeout: "30m",
         idleTimeoutMs: 1800000,
+        staleTimeout: "2h",
+        staleTimeoutMs: 7200000,
         minContentChars: 24,
         shiftPhrases: [
           "switching gears",

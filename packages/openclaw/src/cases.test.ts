@@ -29,7 +29,8 @@ describe("SherpaCaseRouter", () => {
     expect(
       router.resolveActiveCaseId({
         policy,
-        sessionKey: "agent:alpha:telegram:direct:user-1"
+        sessionKey: "agent:alpha:telegram:direct:user-1",
+        timestamp: 1235
       })
     ).toBe("session:agent:alpha:telegram:direct:user-1:task:vendor-review:1234");
   });
@@ -241,6 +242,78 @@ describe("SherpaCaseRouter", () => {
     ).toMatchObject({
       terminalType: "task.ended",
       reason: "session-end"
+    });
+  });
+
+  it("expires a stale active task before prompt or tool lookup reuses it", () => {
+    const config = resolveSherpaPluginConfig(
+      {
+        caseSplitting: {
+          auto: {
+            staleTimeout: "1h"
+          }
+        }
+      },
+      { agentId: "alpha" }
+    );
+    const router = new SherpaCaseRouter(config);
+    const policy = resolveSherpaPolicyDecision(config, {
+      sessionKey: "agent:alpha:telegram:direct:user-1"
+    });
+
+    router.routeDispatch({
+      policy,
+      sessionKey: "agent:alpha:telegram:direct:user-1",
+      content: "Investigate the deployment error in production.",
+      timestamp: 1_000
+    });
+
+    expect(
+      router.resolveActiveCaseId({
+        policy,
+        sessionKey: "agent:alpha:telegram:direct:user-1",
+        timestamp: 1_000 + 3_600_000
+      })
+    ).toBeUndefined();
+  });
+
+  it("closes a stale task and opens a new one on the next meaningful message", () => {
+    const config = resolveSherpaPluginConfig(
+      {
+        caseSplitting: {
+          auto: {
+            staleTimeout: "1h"
+          }
+        }
+      },
+      { agentId: "alpha" }
+    );
+    const router = new SherpaCaseRouter(config);
+    const policy = resolveSherpaPolicyDecision(config, {
+      sessionKey: "agent:alpha:telegram:direct:user-1"
+    });
+
+    router.routeDispatch({
+      policy,
+      sessionKey: "agent:alpha:telegram:direct:user-1",
+      content: "Investigate the deployment error in production.",
+      timestamp: 1_000
+    });
+
+    const next = router.routeDispatch({
+      policy,
+      sessionKey: "agent:alpha:telegram:direct:user-1",
+      content: "Draft the customer status update for the incident.",
+      timestamp: 1_000 + 3_600_000
+    });
+
+    expect(next.terminal).toMatchObject({
+      terminalType: "task.ended",
+      reason: "stale-timeout"
+    });
+    expect(next.boundary).toMatchObject({
+      reason: "auto-first-message",
+      title: "Draft the customer status update for the incident"
     });
   });
 

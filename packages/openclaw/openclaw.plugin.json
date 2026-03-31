@@ -156,6 +156,7 @@
             "properties": {
               "enabled": { "type": "boolean", "default": true },
               "idleTimeout": { "type": "string", "default": "30m" },
+              "staleTimeout": { "type": "string", "default": "2h" },
               "minContentChars": { "type": "integer", "minimum": 1, "default": 24 },
               "shiftPhrases": {
                 "type": "array",
@@ -272,6 +273,9 @@
     },
     "caseSplitting.auto.idleTimeout": {
       "label": "Auto Split Idle Timeout"
+    },
+    "caseSplitting.auto.staleTimeout": {
+      "label": "Auto Split Stale Timeout"
     },
     "caseSplitting.auto.minContentChars": {
       "label": "Auto Split Min Chars"

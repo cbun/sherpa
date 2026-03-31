@@ -62,6 +62,7 @@ export interface SherpaPluginConfig {
     auto?: {
       enabled?: boolean;
       idleTimeout?: string;
+      staleTimeout?: string;
       minContentChars?: number;
       shiftPhrases?: string[];
       maxTitleTokenOverlap?: number;
@@ -138,6 +139,8 @@ export interface ResolvedSherpaPluginConfig {
       enabled: boolean;
       idleTimeout: string;
       idleTimeoutMs: number;
+      staleTimeout: string;
+      staleTimeoutMs: number;
       minContentChars: number;
       shiftPhrases: string[];
       maxTitleTokenOverlap: number;
@@ -270,6 +273,8 @@ export function resolveSherpaPluginConfig(
         enabled: config?.caseSplitting?.auto?.enabled ?? true,
         idleTimeout: config?.caseSplitting?.auto?.idleTimeout ?? "30m",
         idleTimeoutMs: parseDurationMs(config?.caseSplitting?.auto?.idleTimeout, 1_800_000),
+        staleTimeout: config?.caseSplitting?.auto?.staleTimeout ?? "2h",
+        staleTimeoutMs: parseDurationMs(config?.caseSplitting?.auto?.staleTimeout, 7_200_000),
         minContentChars: config?.caseSplitting?.auto?.minContentChars ?? 24,
         shiftPhrases: config?.caseSplitting?.auto?.shiftPhrases ?? [
           "switching gears",

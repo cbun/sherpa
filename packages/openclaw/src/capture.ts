@@ -63,7 +63,7 @@ type TaskEndCaptureInput = {
   title: string;
   slug: string;
   terminalType: "task.completed" | "task.failed" | "task.ended";
-  reason?: "explicit-complete" | "explicit-fail" | "session-end" | "superseded";
+  reason?: "explicit-complete" | "explicit-fail" | "session-end" | "superseded" | "stale-timeout";
   timestamp?: number | undefined;
 };
 

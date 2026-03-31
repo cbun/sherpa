@@ -62,6 +62,8 @@ describe("resolveSherpaPluginConfig", () => {
         enabled: true,
         idleTimeout: "30m",
         idleTimeoutMs: 1800000,
+        staleTimeout: "2h",
+        staleTimeoutMs: 7200000,
         minContentChars: 24,
         shiftPhrases: [
           "switching gears",
@@ -142,6 +144,7 @@ describe("resolveSherpaPluginConfig", () => {
           auto: {
             enabled: false,
             idleTimeout: "10m",
+            staleTimeout: "1h",
             minContentChars: 12,
             shiftPhrases: ["switching gears", "new topic"],
             maxTitleTokenOverlap: 0.1
@@ -209,6 +212,8 @@ describe("resolveSherpaPluginConfig", () => {
         enabled: false,
         idleTimeout: "10m",
         idleTimeoutMs: 600000,
+        staleTimeout: "1h",
+        staleTimeoutMs: 3600000,
         minContentChars: 12,
         shiftPhrases: ["switching gears", "new topic"],
         maxTitleTokenOverlap: 0.1

@@ -91,6 +91,7 @@ class InProcessSherpaBackend implements SherpaBackend {
 }
 
 type SpawnLike = typeof spawn;
+type FetchLike = typeof fetch;
 
 function collectOutput(child: ChildProcessWithoutNullStreams, stdinText?: string) {
   return new Promise<{ stdout: string; stderr: string; code: number | null; signal: NodeJS.Signals | null }>(
@@ -273,9 +274,115 @@ export class CliSherpaBackend implements SherpaBackend {
   }
 }
 
-export function createSherpaBackend(resolved: ResolvedSherpaPluginConfig, spawnImpl?: SpawnLike): SherpaBackend {
+export class HttpSherpaBackend implements SherpaBackend {
+  constructor(
+    private readonly resolved: ResolvedSherpaPluginConfig,
+    private readonly fetchImpl: FetchLike = fetch
+  ) {}
+
+  private async call<T>(method: string, params?: unknown): Promise<T> {
+    const timeoutMs = this.resolved.transport.timeoutMs;
+    const response = await this.fetchImpl(new URL("/rpc", this.resolved.transport.baseUrl), {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({ method, params }),
+      ...(timeoutMs > 0 ? { signal: AbortSignal.timeout(timeoutMs) } : {})
+    });
+
+    const payload = (await response.json()) as
+      | { ok: true; result: T }
+      | { ok: false; error: { message?: string } };
+
+    if (!response.ok || !payload.ok) {
+      const message = "error" in payload ? payload.error?.message : response.statusText;
+      throw new Error(`Sherpa HTTP transport failed: ${message || `HTTP ${response.status}`}`);
+    }
+
+    return payload.result;
+  }
+
+  async init() {
+    await this.status();
+  }
+
+  ingest(event: SherpaEventInput) {
+    return this.call<SherpaEvent>("ingest", { event });
+  }
+
+  ingestBatch(events: SherpaEventInput[]) {
+    return this.call<SherpaEvent[]>("ingestBatch", { events });
+  }
+
+  async rebuild() {
+    await this.call<WorkflowStatusResult>("rebuild");
+  }
+
+  status() {
+    return this.call<WorkflowStatusResult>("status");
+  }
+
+  doctor() {
+    return this.call<DoctorResult>("doctor");
+  }
+
+  exportSnapshot() {
+    return this.call<ExportResult>("exportSnapshot");
+  }
+
+  gc() {
+    return this.call<GcResult>("gc");
+  }
+
+  workflowState(caseId: string, maxOrder?: number) {
+    return this.call<WorkflowStateResult>("workflowState", {
+      caseId,
+      ...(maxOrder !== undefined ? { maxOrder } : {})
+    });
+  }
+
+  workflowNext(caseId: string, limit?: number) {
+    return this.call<WorkflowNextResult>("workflowNext", {
+      caseId,
+      ...(limit !== undefined ? { limit } : {})
+    });
+  }
+
+  workflowRisks(caseId: string, limit?: number) {
+    return this.call<WorkflowRisksResult>("workflowRisks", {
+      caseId,
+      ...(limit !== undefined ? { limit } : {})
+    });
+  }
+
+  workflowRecall(caseId: string, mode?: WorkflowRecallMode, limit?: number) {
+    return this.call<WorkflowRecallResult>("workflowRecall", {
+      caseId,
+      ...(mode !== undefined ? { mode } : {}),
+      ...(limit !== undefined ? { limit } : {})
+    });
+  }
+}
+
+export function backendNeedsRefresh(current: ResolvedSherpaPluginConfig, next: ResolvedSherpaPluginConfig) {
+  return JSON.stringify(current.transport) !== JSON.stringify(next.transport) ||
+    JSON.stringify(current.engine) !== JSON.stringify(next.engine);
+}
+
+export function createSherpaBackend(
+  resolved: ResolvedSherpaPluginConfig,
+  dependencies?: {
+    spawnImpl?: SpawnLike;
+    fetchImpl?: FetchLike;
+  }
+): SherpaBackend {
   if (resolved.transport.mode === "stdio") {
-    return new CliSherpaBackend(resolved, spawnImpl);
+    return new CliSherpaBackend(resolved, dependencies?.spawnImpl);
+  }
+
+  if (resolved.transport.mode === "http") {
+    return new HttpSherpaBackend(resolved, dependencies?.fetchImpl);
   }
 
   return new InProcessSherpaBackend(new SherpaEngine(resolved.engine as SherpaEngineOptions));

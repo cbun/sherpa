@@ -13,7 +13,7 @@
         "properties": {
           "mode": {
             "type": "string",
-            "enum": ["embedded", "stdio"],
+            "enum": ["embedded", "stdio", "http"],
             "default": "embedded"
           },
           "command": {
@@ -24,6 +24,10 @@
             "type": "array",
             "items": { "type": "string" },
             "default": []
+          },
+          "baseUrl": {
+            "type": "string",
+            "default": "http://127.0.0.1:8787"
           },
           "timeoutMs": {
             "type": "integer",
@@ -203,6 +207,9 @@
     },
     "transport.args": {
       "label": "Transport Args"
+    },
+    "transport.baseUrl": {
+      "label": "Transport Base URL"
     },
     "transport.timeoutMs": {
       "label": "Transport Timeout"

@@ -13,6 +13,7 @@ function createResolved(storeRoot: string): ResolvedSherpaPluginConfig {
       mode: "embedded",
       command: "sherpa",
       args: [],
+      baseUrl: "http://127.0.0.1:8787",
       timeoutMs: 5000,
       env: {}
     },

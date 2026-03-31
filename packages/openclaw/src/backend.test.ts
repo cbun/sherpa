@@ -3,7 +3,7 @@ import { PassThrough } from "node:stream";
 
 import { describe, expect, it, vi } from "vitest";
 
-import { CliSherpaBackend, createSherpaBackend } from "./backend.js";
+import { CliSherpaBackend, HttpSherpaBackend, createSherpaBackend } from "./backend.js";
 import { resolveSherpaPluginConfig } from "./config.js";
 
 function createSpawnStub(
@@ -153,6 +153,53 @@ describe("CliSherpaBackend", () => {
     const backend = new CliSherpaBackend(resolved, spawnStub as never);
 
     await expect(backend.workflowState("case-1", 4)).resolves.toMatchObject({
+      caseId: "case-1"
+    });
+  });
+});
+
+describe("HttpSherpaBackend", () => {
+  it("posts RPC requests to the configured daemon base URL", async () => {
+    const fetchStub = vi.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
+      expect(String(input)).toBe("http://127.0.0.1:8787/rpc");
+      expect(init?.method).toBe("POST");
+      expect(JSON.parse(String(init?.body))).toEqual({
+        method: "workflowNext",
+        params: {
+          caseId: "case-1",
+          limit: 2
+        }
+      });
+
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          result: {
+            caseId: "case-1",
+            candidates: []
+          }
+        }),
+        {
+          status: 200,
+          headers: {
+            "content-type": "application/json"
+          }
+        }
+      );
+    });
+
+    const resolved = resolveSherpaPluginConfig(
+      {
+        transport: {
+          mode: "http",
+          baseUrl: "http://127.0.0.1:8787"
+        }
+      },
+      { agentId: "alpha" }
+    );
+    const backend = new HttpSherpaBackend(resolved, fetchStub as never);
+
+    await expect(backend.workflowNext("case-1", 2)).resolves.toMatchObject({
       caseId: "case-1"
     });
   });

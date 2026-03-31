@@ -13,7 +13,7 @@ import {
   buildToolStartEvent
 } from "./capture.js";
 import { buildSherpaAdvisory } from "./advisory.js";
-import { createSherpaBackend, type SherpaPluginRuntime } from "./backend.js";
+import { backendNeedsRefresh, createSherpaBackend, type SherpaPluginRuntime } from "./backend.js";
 import { SherpaCaseRouter } from "./cases.js";
 import { resolveSherpaPluginConfig, type SherpaPluginConfig } from "./config.js";
 import { createSherpaMaintenanceRuntime } from "./maintenance.js";
@@ -50,7 +50,7 @@ function resolveRuntime(
 
   let runtime = runtimeCache.get(resolved.storeRoot);
 
-  if (!runtime) {
+  if (!runtime || backendNeedsRefresh(runtime.resolved, resolved)) {
     runtime = {
       resolved,
       backend: createSherpaBackend(resolved)
@@ -520,6 +520,11 @@ export default definePluginEntry({
                     args: runtime.resolved.transport.args,
                     timeoutMs: runtime.resolved.transport.timeoutMs
                   }
+                : runtime.resolved.transport.mode === "http"
+                  ? {
+                      baseUrl: runtime.resolved.transport.baseUrl,
+                      timeoutMs: runtime.resolved.transport.timeoutMs
+                    }
                 : {})
             },
             capture: runtime.resolved.capture,

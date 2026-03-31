@@ -13,6 +13,7 @@ describe("resolveSherpaPluginConfig", () => {
       mode: "embedded",
       command: "sherpa",
       args: [],
+      baseUrl: "http://127.0.0.1:8787",
       timeoutMs: 3000,
       env: {}
     });
@@ -88,9 +89,10 @@ describe("resolveSherpaPluginConfig", () => {
     const resolved = resolveSherpaPluginConfig(
       {
         transport: {
-          mode: "stdio",
+          mode: "http",
           command: "node",
           args: ["./dist/index.js"],
+          baseUrl: "http://127.0.0.1:9898",
           timeoutMs: 15000,
           env: {
             SHERPA_LOG_LEVEL: "debug"
@@ -155,9 +157,10 @@ describe("resolveSherpaPluginConfig", () => {
     );
 
     expect(resolved.transport).toEqual({
-      mode: "stdio",
+      mode: "http",
       command: "node",
       args: ["./dist/index.js"],
+      baseUrl: "http://127.0.0.1:9898",
       timeoutMs: 15000,
       env: {
         SHERPA_LOG_LEVEL: "debug"

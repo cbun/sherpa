@@ -1,3 +1,4 @@
+import { createServer } from "node:http";
 import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
@@ -41,6 +42,16 @@ function resolveRoot(command: CommandInstance) {
 
 function createEngine(command: CommandInstance) {
   const options = command.optsWithGlobals<{ root?: string; defaultOrder?: string; minOrder?: string; maxOrder?: string; minSupport?: string }>();
+  return createEngineFromValues(options);
+}
+
+function createEngineFromValues(options: {
+  root?: string;
+  defaultOrder?: string;
+  minOrder?: string;
+  maxOrder?: string;
+  minSupport?: string;
+}) {
 
   const engineOptions: ConstructorParameters<typeof SherpaEngine>[0] = {
     rootDir: options.root ?? defaultRoot()
@@ -93,6 +104,64 @@ function parseRecallMode(mode: string): WorkflowRecallMode {
   }
 
   throw new Error("workflow-recall --mode must be one of: successful, failed, any");
+}
+
+async function readJsonBody(request: import("node:http").IncomingMessage) {
+  const chunks: Uint8Array[] = [];
+
+  for await (const chunk of request) {
+    chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+  }
+
+  if (chunks.length === 0) {
+    return {};
+  }
+
+  return JSON.parse(Buffer.concat(chunks).toString("utf8")) as {
+    method?: string;
+    params?: Record<string, unknown>;
+  };
+}
+
+function writeJson(response: import("node:http").ServerResponse, statusCode: number, payload: unknown) {
+  response.writeHead(statusCode, {
+    "content-type": "application/json; charset=utf-8"
+  });
+  response.end(JSON.stringify(payload));
+}
+
+async function executeRpc(engine: SherpaEngine, method: string, params: Record<string, unknown> = {}) {
+  switch (method) {
+    case "ingest":
+      return engine.ingest(params.event as SherpaEventInput);
+    case "ingestBatch":
+      return engine.ingestBatch((params.events as SherpaEventInput[]) ?? []);
+    case "rebuild":
+      await engine.rebuild();
+      return engine.status();
+    case "status":
+      return engine.status();
+    case "doctor":
+      return engine.doctor();
+    case "exportSnapshot":
+      return engine.exportSnapshot();
+    case "gc":
+      return engine.gc();
+    case "workflowState":
+      return engine.workflowState(String(params.caseId ?? ""), typeof params.maxOrder === "number" ? params.maxOrder : undefined);
+    case "workflowNext":
+      return engine.workflowNext(String(params.caseId ?? ""), typeof params.limit === "number" ? params.limit : undefined);
+    case "workflowRisks":
+      return engine.workflowRisks(String(params.caseId ?? ""), typeof params.limit === "number" ? params.limit : undefined);
+    case "workflowRecall":
+      return engine.workflowRecall(
+        String(params.caseId ?? ""),
+        typeof params.mode === "string" ? parseRecallMode(params.mode) : undefined,
+        typeof params.limit === "number" ? params.limit : undefined
+      );
+    default:
+      throw new Error(`Unsupported RPC method: ${method}`);
+  }
 }
 
 const program = new Command();
@@ -214,6 +283,78 @@ program
   .action(async (options, command) => {
     const engine = createEngine(command);
     printJson(await engine.workflowRecall(options.caseId, parseRecallMode(options.mode), parseInteger(options.limit, "--limit")));
+  });
+
+program
+  .command("serve")
+  .description("Run a local Sherpa JSON HTTP daemon")
+  .option("--host <host>", "Bind host", "127.0.0.1")
+  .option("--port <port>", "Bind port", "8787")
+  .action(async (options, command) => {
+    const engine = createEngine(command);
+    await engine.init();
+
+    const host = options.host;
+    const port = parseInteger(options.port, "--port");
+    const server = createServer(async (request, response) => {
+      const url = new URL(request.url ?? "/", `http://${request.headers.host ?? `${host}:${port}`}`);
+
+      if (request.method === "GET" && url.pathname === "/health") {
+        writeJson(response, 200, {
+          ok: true,
+          backend: "sherpa",
+          transport: "http"
+        });
+        return;
+      }
+
+      if (request.method !== "POST" || url.pathname !== "/rpc") {
+        writeJson(response, 404, {
+          ok: false,
+          error: {
+            message: "Not found"
+          }
+        });
+        return;
+      }
+
+      try {
+        const body = await readJsonBody(request);
+        if (!body.method) {
+          writeJson(response, 400, {
+            ok: false,
+            error: {
+              message: "Missing RPC method"
+            }
+          });
+          return;
+        }
+
+        const result = await executeRpc(engine, body.method, body.params);
+        writeJson(response, 200, {
+          ok: true,
+          result
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        writeJson(response, 500, {
+          ok: false,
+          error: {
+            message
+          }
+        });
+      }
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(port, host, () => {
+        server.off("error", reject);
+        resolve();
+      });
+    });
+
+    process.stdout.write(`Sherpa daemon listening on http://${host}:${port}\n`);
   });
 
 program.parseAsync(process.argv).catch((error: unknown) => {

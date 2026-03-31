@@ -112,6 +112,12 @@ Or run the MCP HTTP server:
 node packages/mcp/dist/http.js --agent-id main --host 127.0.0.1 --port 8787
 ```
 
+Or run Sherpa's native JSON daemon:
+
+```bash
+node packages/cli/dist/index.js --root ./.sherpa serve --host 127.0.0.1 --port 8787
+```
+
 ## Notes
 
 - The current storage backend uses Node 22's built-in `node:sqlite`, which still emits an experimental warning.
@@ -120,8 +126,10 @@ node packages/mcp/dist/http.js --agent-id main --host 127.0.0.1 --port 8787
 - Risk and recall are still alpha-grade heuristics built from eventual case outcomes and suffix matching; they are useful now, but not yet the final retrieval model described in the PRD.
 - The OpenClaw package now captures session lifecycle, inbound dispatch, and tool lifecycle events with redacted-by-default metadata, debounced per-store batching, periodic maintenance, conservative scope rules, ignore/stateless session patterns, explicit task-boundary case splitting from configurable markers, explicit task completion/failure markers, automatic task starts on the first meaningful user message, rotation after a configurable idle timeout, conservative intent-shift splitting from transition phrases plus low token overlap, terminal task events when tasks are superseded or the session ends, optional bounded advisory injection, structured degraded responses when the backend is unavailable, and a configurable backend transport that can run embedded or shell out to the Sherpa CLI.
 - The OpenClaw package now captures session lifecycle, inbound dispatch, and tool lifecycle events with redacted-by-default metadata, debounced per-store batching, conservative scope rules, ignore/stateless session patterns, explicit task-boundary case splitting from configurable markers, explicit task completion/failure markers, automatic task starts on the first meaningful user message, rotation after a configurable idle timeout, conservative intent-shift splitting from transition phrases plus low token overlap, terminal task events when tasks are superseded or the session ends, stale active-case expiry so old tasks do not leak into later prompts or tool calls, optional bounded advisory injection, structured degraded responses when the backend is unavailable, and a configurable backend transport that can run embedded or shell out to the Sherpa CLI.
+- The OpenClaw package now captures session lifecycle, inbound dispatch, and tool lifecycle events with redacted-by-default metadata, debounced per-store batching, conservative scope rules, ignore/stateless session patterns, explicit task-boundary case splitting from configurable markers, explicit task completion/failure markers, automatic task starts on the first meaningful user message, rotation after a configurable idle timeout, conservative intent-shift splitting from transition phrases plus low token overlap, terminal task events when tasks are superseded or the session ends, stale active-case expiry so old tasks do not leak into later prompts or tool calls, optional bounded advisory injection, structured degraded responses when the backend is unavailable, and a configurable backend transport that can run embedded, shell out to the Sherpa CLI, or talk to a warm local HTTP daemon.
 - The MCP package now supports stdio plus a minimal stateless streamable HTTP deployment path with a `/health` endpoint for local sidecar/service use.
 - The CLI now supports `ingest-batch` so subprocess transports can flush event bursts efficiently.
+- The CLI now also supports `serve`, exposing a small local JSON HTTP daemon at `/health` and `/rpc`.
 - `workflow_status` in the native plugin now reports plugin transport and capture/scope diagnostics in addition to core backend freshness.
 
 ## Research Direction
@@ -165,7 +173,7 @@ That leads to a few practical implementation rules:
 - Improve recall/risk scoring beyond the current heuristic layer
 - Improve automatic boundary heuristics beyond phrase and token-overlap rules
 - Add stronger outcome handling beyond explicit terminal markers, session-end cleanup, and stale active-case expiry
-- Add a warm long-lived daemon transport for the OpenClaw plugin beyond embedded and one-shot CLI subprocess execution
+- Add plugin-managed daemon lifecycle for HTTP mode beyond manual `sherpa serve`
 - Define a validation harness using synthetic workflow traces and real event-log datasets
 - Add CI under `.github/workflows/`
 - Add release/versioning automation once package boundaries settle

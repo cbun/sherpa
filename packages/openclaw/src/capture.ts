@@ -24,6 +24,7 @@ type DispatchCaptureInput = {
   channel?: string;
   senderId?: string;
   content: string;
+  preceding?: string | undefined;
   timestamp?: number;
   isGroup?: boolean;
 };
@@ -36,12 +37,14 @@ type ToolStartCaptureInput = {
   toolCallId?: string;
   toolName: string;
   params: Record<string, unknown>;
+  toolArgsSummary?: string | undefined;
 };
 
 type ToolFinishCaptureInput = ToolStartCaptureInput & {
   result?: unknown;
   error?: string;
   durationMs?: number;
+  outputSnippet?: string | undefined;
 };
 
 type ToolFamily = "tool" | "browser" | "web" | "automation";
@@ -149,6 +152,58 @@ function clampMeta(meta: Record<string, unknown>, maxMetaBytes: number) {
 
   return {
     metaTruncated: true
+  };
+}
+
+function truncateText(value: string | undefined, maxChars: number) {
+  if (!value) {
+    return undefined;
+  }
+
+  const normalized = value.trim();
+  if (!normalized) {
+    return undefined;
+  }
+
+  return normalized.slice(0, maxChars);
+}
+
+function buildDispatchContext(config: ResolvedSherpaPluginConfig, input: DispatchCaptureInput) {
+  if (config.ledger.redactRawText) {
+    return undefined;
+  }
+
+  const text = truncateText(input.content, 500);
+  const preceding = truncateText(input.preceding, 200);
+
+  if (!text && !preceding) {
+    return undefined;
+  }
+
+  return {
+    ...(text ? { text } : {}),
+    ...(preceding ? { preceding } : {})
+  };
+}
+
+function buildToolContext(
+  config: ResolvedSherpaPluginConfig,
+  input: Pick<ToolStartCaptureInput, "toolArgsSummary"> & Pick<ToolFinishCaptureInput, "outputSnippet">
+) {
+  if (config.ledger.redactRawText) {
+    return undefined;
+  }
+
+  const toolArgs = truncateText(input.toolArgsSummary, 300);
+  const text = truncateText(input.outputSnippet, 500);
+
+  if (!toolArgs && !text) {
+    return undefined;
+  }
+
+  return {
+    ...(text ? { text } : {}),
+    ...(toolArgs ? { toolArgs } : {})
   };
 }
 
@@ -411,7 +466,8 @@ export function buildDispatchEvent(
     metrics: {
       contentChars: input.content.length
     },
-    meta: buildMessageMeta(config, input, agentId)
+    meta: buildMessageMeta(config, input, agentId),
+    context: buildDispatchContext(config, input)
   }, {
     kind: "message",
     ...(normalizedChannel ? { channel: normalizedChannel } : {}),
@@ -520,7 +576,8 @@ export function buildToolStartEvent(
     metrics: {
       paramCount: Object.keys(input.params).length
     },
-    meta: buildToolMeta(config, input)
+    meta: buildToolMeta(config, input),
+    context: buildToolContext(config, input)
   }, {
     kind: "tool",
     toolName: input.toolName,
@@ -556,7 +613,8 @@ export function buildToolFinishEvent(
       ...(typeof input.durationMs === "number" ? { durationMs: input.durationMs } : {}),
       ...(input.result !== undefined ? { hasResult: 1 } : {})
     },
-    meta: buildToolMeta(config, input)
+    meta: buildToolMeta(config, input),
+    context: buildToolContext(config, input)
   }, {
     kind: "tool",
     toolName: input.toolName,

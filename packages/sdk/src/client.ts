@@ -15,6 +15,7 @@ import {
   type WorkflowRecallMode,
   type WorkflowRecallResult,
   type WorkflowRisksResult,
+  type WorkflowSignalsResult,
   type WorkflowStateResult,
   type WorkflowStatusResult
 } from "@sherpa/core";
@@ -104,6 +105,10 @@ export class SherpaClient {
 
   workflowNext(caseId: string, limit?: number): Promise<WorkflowNextResult> {
     return this.engine.workflowNext(caseId, limit);
+  }
+
+  workflowSignals(caseId: string, limit?: number): Promise<WorkflowSignalsResult> {
+    return this.engine.workflowSignals(caseId, limit);
   }
 
   workflowRisks(caseId: string, limit?: number): Promise<WorkflowRisksResult> {

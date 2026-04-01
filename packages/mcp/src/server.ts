@@ -107,6 +107,18 @@ export function createSherpaMcpServer(options: SherpaMcpOptions = {}) {
   );
 
   server.registerTool(
+    "workflow_signals",
+    {
+      description: "Return raw behavioral workflow signals from the current path",
+      inputSchema: {
+        caseId: z.string(),
+        limit: z.number().int().positive().optional()
+      }
+    },
+    async ({ caseId, limit }) => formatMcpJsonResult(await client.workflowSignals(caseId, limit))
+  );
+
+  server.registerTool(
     "workflow_risks",
     {
       description: "Return likely failure or stall branches from the current path",

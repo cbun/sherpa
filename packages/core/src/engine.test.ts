@@ -62,11 +62,23 @@ describe("SherpaEngine", () => {
         source: "tool.review",
         type: "approval.needed",
         outcome: "unknown" as const,
-        labels: ["workflow:vendor-review"]
+        labels: ["workflow:vendor-review"],
+        context: {
+          text: "Need explicit sign-off before sending."
+        }
       },
       {
         caseId: "case-1",
         ts: "2026-03-30T10:04:00.000Z",
+        source: "openclaw.dispatch",
+        type: "message.user.approval",
+        actor: "user",
+        outcome: "unknown" as const,
+        labels: ["workflow:vendor-review"]
+      },
+      {
+        caseId: "case-1",
+        ts: "2026-03-30T10:05:00.000Z",
         source: "tool.review",
         type: "approval.granted",
         outcome: "unknown" as const,
@@ -74,7 +86,7 @@ describe("SherpaEngine", () => {
       },
       {
         caseId: "case-1",
-        ts: "2026-03-30T10:05:00.000Z",
+        ts: "2026-03-30T10:06:00.000Z",
         source: "tool.report",
         type: "report.sent",
         outcome: "success" as const,
@@ -110,11 +122,23 @@ describe("SherpaEngine", () => {
         source: "tool.review",
         type: "missing.attachment",
         outcome: "unknown" as const,
-        labels: ["workflow:vendor-review"]
+        labels: ["workflow:vendor-review"],
+        context: {
+          text: "The required attachment is still missing."
+        }
       },
       {
         caseId: "case-2",
         ts: "2026-03-30T11:04:00.000Z",
+        source: "openclaw.dispatch",
+        type: "message.user.correction",
+        actor: "user",
+        outcome: "unknown" as const,
+        labels: ["workflow:vendor-review"]
+      },
+      {
+        caseId: "case-2",
+        ts: "2026-03-30T11:05:00.000Z",
         source: "tool.review",
         type: "review.failed",
         outcome: "failure" as const,
@@ -150,6 +174,18 @@ describe("SherpaEngine", () => {
         source: "tool.review",
         type: "waiting.on.customer",
         outcome: "unknown" as const,
+        labels: ["workflow:vendor-review"],
+        context: {
+          text: "Blocked until the customer responds."
+        }
+      },
+      {
+        caseId: "case-3",
+        ts: "2026-03-30T12:04:00.000Z",
+        source: "openclaw.dispatch",
+        type: "message.user.abandonment",
+        actor: "user",
+        outcome: "unknown" as const,
         labels: ["workflow:vendor-review"]
       },
       {
@@ -183,7 +219,7 @@ describe("SherpaEngine", () => {
     }
 
     const status = await engine.status();
-    expect(status.events).toBe(18);
+    expect(status.events).toBe(21);
     expect(status.cases).toBe(4);
 
     const state = await engine.workflowState("case-current");
@@ -208,6 +244,30 @@ describe("SherpaEngine", () => {
       event: "missing.attachment",
       failureRate: 1
     });
+    expect(next.candidates[0]?.userResponseDist).toEqual({
+      approval: 1
+    });
+
+    const signals = await engine.workflowSignals("case-current");
+    expect(signals.signals).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          prediction: "approval.needed",
+          probability: 0.33,
+          support: 1,
+          userResponseDist: { approval: 1 },
+          basis: [expect.objectContaining({ caseId: "case-1", context: "Need explicit sign-off before sending." })]
+        }),
+        expect.objectContaining({
+          prediction: "missing.attachment",
+          userResponseDist: { correction: 1 }
+        }),
+        expect.objectContaining({
+          prediction: "waiting.on.customer",
+          userResponseDist: { abandonment: 1 }
+        })
+      ])
+    );
 
     const risks = await engine.workflowRisks("case-current");
     expect(risks.risks).toEqual(
@@ -216,15 +276,13 @@ describe("SherpaEngine", () => {
           branch: "missing.attachment",
           kind: "failure",
           matchedOrder: 3,
-          confidence: 0.77,
-          score: 0.762
+          confidence: 0.77
         }),
         expect.objectContaining({
           branch: "waiting.on.customer",
           kind: "stall",
           matchedOrder: 3,
-          confidence: 0.77,
-          score: 0.762
+          confidence: 0.77
         })
       ])
     );
@@ -235,8 +293,8 @@ describe("SherpaEngine", () => {
       outcome: "success",
       matchedOrder: 3,
       confidence: 1,
-      score: 0.75,
-      continuation: ["approval.needed", "approval.granted", "report.sent"]
+      score: 1,
+      continuation: ["approval.needed", "message.user.approval", "approval.granted", "report.sent"]
     });
 
     const failedRecall = await engine.workflowRecall("case-current", "failed");
@@ -244,9 +302,96 @@ describe("SherpaEngine", () => {
       caseId: "case-2",
       outcome: "failure",
       matchedOrder: 3,
-      confidence: 0.84,
-      score: 0.425,
-      continuation: ["missing.attachment", "review.failed"]
+      confidence: 0.94,
+      score: 0.637,
+      continuation: ["missing.attachment", "message.user.correction", "review.failed"]
+    });
+  });
+
+  it("computes per-edge user response distributions during rebuild", async () => {
+    const engine = await createEngine();
+
+    await engine.ingestBatch([
+      {
+        caseId: "case-1",
+        ts: "2026-03-30T10:00:00.000Z",
+        source: "tool.docs",
+        type: "docs.received",
+        outcome: "success"
+      },
+      {
+        caseId: "case-1",
+        ts: "2026-03-30T10:01:00.000Z",
+        source: "tool.review",
+        type: "review.started",
+        outcome: "unknown"
+      },
+      {
+        caseId: "case-1",
+        ts: "2026-03-30T10:02:00.000Z",
+        source: "tool.review",
+        type: "approval.needed",
+        outcome: "unknown"
+      },
+      {
+        caseId: "case-1",
+        ts: "2026-03-30T10:03:00.000Z",
+        source: "openclaw.dispatch",
+        type: "message.user.approval",
+        actor: "user",
+        outcome: "unknown"
+      },
+      {
+        caseId: "case-2",
+        ts: "2026-03-30T11:00:00.000Z",
+        source: "tool.docs",
+        type: "docs.received",
+        outcome: "success"
+      },
+      {
+        caseId: "case-2",
+        ts: "2026-03-30T11:01:00.000Z",
+        source: "tool.review",
+        type: "review.started",
+        outcome: "unknown"
+      },
+      {
+        caseId: "case-2",
+        ts: "2026-03-30T11:02:00.000Z",
+        source: "tool.review",
+        type: "approval.needed",
+        outcome: "unknown"
+      },
+      {
+        caseId: "case-2",
+        ts: "2026-03-30T11:03:00.000Z",
+        source: "openclaw.dispatch",
+        type: "message.user.correction",
+        actor: "user",
+        outcome: "unknown"
+      },
+      {
+        caseId: "case-current",
+        ts: "2026-03-30T12:00:00.000Z",
+        source: "tool.docs",
+        type: "docs.received",
+        outcome: "success"
+      },
+      {
+        caseId: "case-current",
+        ts: "2026-03-30T12:01:00.000Z",
+        source: "tool.review",
+        type: "review.started",
+        outcome: "unknown"
+      }
+    ]);
+
+    const next = await engine.workflowNext("case-current");
+    const approvalNeeded = next.candidates.find((candidate) => candidate.event === "approval.needed");
+
+    expect(approvalNeeded?.userResponseDist).toEqual({
+      approval: 1,
+      correction: 1
     });
   });
 
@@ -343,6 +488,31 @@ describe("SherpaEngine", () => {
       support: 2,
       successRate: 1,
       failureRate: 0
+    });
+  });
+
+  it("roundtrips event context through ingest, ledger rebuild, and graph reads", async () => {
+    const engine = await createEngine();
+
+    await engine.ingest({
+      caseId: "case-context",
+      ts: "2026-03-30T15:00:00.000Z",
+      source: "openclaw.dispatch",
+      type: "message.received",
+      actor: "user",
+      outcome: "unknown",
+      context: {
+        text: "Investigate the failing deploy",
+        preceding: "I can check the logs first."
+      }
+    });
+
+    const state = await engine.workflowState("case-context");
+
+    expect(state.recentEvents).toHaveLength(1);
+    expect(state.recentEvents[0]?.context).toEqual({
+      text: "Investigate the failing deploy",
+      preceding: "I can check the logs first."
     });
   });
 

@@ -49,9 +49,8 @@ describe("consolidate", () => {
         eventId: event.eventId,
         enrichedType: "message.user.command",
         intent: "command",
-        domain: "code",
-        sessionShape: "execution",
-        feedbackSignal: null,
+        domain: "refactor",
+        sentiment: "neutral",
         confidence: 0.95
       };
 
@@ -60,12 +59,12 @@ describe("consolidate", () => {
       expect(result.type).toBe("message.user.command");
       expect(result.labels).toContain("existing");
       expect(result.labels).toContain("intent:command");
-      expect(result.labels).toContain("domain:code");
-      expect(result.labels).toContain("session-shape:execution");
-      expect(result.labels).not.toContain("feedback:null");
+      expect(result.labels).toContain("domain:refactor");
+      expect(result.labels).toContain("sentiment:neutral");
       expect((result.meta as Record<string, unknown>).consolidated).toBe(true);
       expect((result.meta as Record<string, unknown>).originalType).toBe("message.user.inbound");
       expect((result.meta as Record<string, unknown>).consolidationModel).toBe("test-model");
+      expect((result.meta as Record<string, unknown>).consolidationIntent).toBe("command");
     });
 
     it("preserves originalType on re-consolidation", () => {
@@ -78,8 +77,7 @@ describe("consolidate", () => {
         enrichedType: "message.user.question",
         intent: "question",
         domain: "research",
-        sessionShape: "exploration",
-        feedbackSignal: null,
+        sentiment: "neutral",
         confidence: 0.88
       };
 
@@ -89,20 +87,19 @@ describe("consolidate", () => {
       expect((result.meta as Record<string, unknown>).originalType).toBe("message.user.inbound");
     });
 
-    it("adds feedback label when present", () => {
+    it("adds sentiment label when present", () => {
       const event = makeEvent();
       const enrichment: EventEnrichment = {
         eventId: event.eventId,
         enrichedType: "message.user.correction",
         intent: "correction",
-        domain: "code",
-        sessionShape: "debugging",
-        feedbackSignal: "corrected",
+        domain: "debug",
+        sentiment: "frustrated",
         confidence: 0.9
       };
 
       const result = applyEnrichment(event, enrichment, "test");
-      expect(result.labels).toContain("feedback:corrected");
+      expect(result.labels).toContain("sentiment:frustrated");
     });
   });
 
@@ -134,9 +131,8 @@ describe("consolidate", () => {
           eventId: event.eventId,
           enrichedType: "message.user.command.code",
           intent: "command",
-          domain: "code",
-          sessionShape: "execution",
-          feedbackSignal: null,
+          domain: "refactor",
+          sentiment: "neutral",
           confidence: 0.92
         }
       ]);
@@ -161,8 +157,7 @@ describe("consolidate", () => {
           enrichedType: "message.user.unknown",
           intent: "unknown",
           domain: "unknown",
-          sessionShape: "unknown",
-          feedbackSignal: null,
+          sentiment: "unknown",
           confidence: 0
         }
       ]);
@@ -184,9 +179,8 @@ describe("consolidate", () => {
           eventId: event.eventId,
           enrichedType: "message.user.command",
           intent: "command",
-          domain: "code",
-          sessionShape: "execution",
-          feedbackSignal: null,
+          domain: "refactor",
+          sentiment: "neutral",
           confidence: 0.9
         }
       ]);
@@ -227,9 +221,8 @@ describe("consolidate", () => {
           eventId: e.eventId,
           enrichedType: "message.user.command",
           intent: "command" as const,
-          domain: "code" as const,
-          sessionShape: "execution" as const,
-          feedbackSignal: null,
+          domain: "refactor" as const,
+          sentiment: "neutral" as const,
           confidence: 0.9
         }));
       };
@@ -241,6 +234,37 @@ describe("consolidate", () => {
       });
 
       expect(callCount).toBe(3); // 3 + 3 + 1
+    });
+
+    it("passes event context into the classifier batch", async () => {
+      const event = makeEvent({
+        context: {
+          text: "please update the config and stop refactoring unrelated files",
+          preceding: "I started refactoring the auth module too."
+        }
+      });
+
+      const { events } = await consolidateEvents([event], {
+        classify: async (batch) => {
+          expect(batch.events[0]?.context?.text).toContain("update the config");
+          return [
+            {
+              eventId: event.eventId,
+              enrichedType: batch.events[0]?.context?.text?.includes("config")
+                ? "message.user.correction"
+                : "message.user.followup",
+              intent: "correction",
+              domain: "config",
+              sentiment: "negative",
+              confidence: 0.94
+            }
+          ];
+        },
+        model: "mock"
+      });
+
+      expect(events[0]?.type).toBe("message.user.correction");
+      expect((events[0]?.meta as Record<string, unknown>).consolidationDomain).toBe("config");
     });
   });
 });

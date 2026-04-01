@@ -14,7 +14,7 @@ import {
   buildToolFinishEvent,
   buildToolStartEvent
 } from "./capture.js";
-import { buildSherpaAdvisory } from "./advisory.js";
+import { interpretAdvisory, type ConversationTurn } from "./advisory-interpreter.js";
 import { backendNeedsRefresh, createSherpaBackend, type SherpaPluginRuntime } from "./backend.js";
 import { SherpaCaseRouter } from "./cases.js";
 import { resolveSherpaPluginConfig, type SherpaPluginConfig } from "./config.js";
@@ -42,9 +42,148 @@ function detectAgentId(params: { agentId?: string | undefined; caseId?: string |
 
 const runtimeCache = new Map<string, SherpaPluginRuntime>();
 const resolvedConfigCache = new Map<string, ReturnType<typeof resolveSherpaPluginConfig>>();
-const advisoryCooldowns = new Map<string, number>();
+const promptContextCache = new Map<string, { text?: string; preceding?: string }>();
 
-const ADVISORY_COOLDOWN_MS = 120_000; // 2 minutes between advisories per case
+function truncateText(value: string | undefined, maxChars: number) {
+  if (!value) {
+    return undefined;
+  }
+
+  const normalized = value.trim();
+  if (!normalized) {
+    return undefined;
+  }
+
+  return normalized.slice(0, maxChars);
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
+}
+
+function readString(value: unknown) {
+  return typeof value === "string" ? value : undefined;
+}
+
+function summarizeUnknown(value: unknown, maxChars: number) {
+  if (typeof value === "string") {
+    return truncateText(value, maxChars);
+  }
+
+  if (value === undefined) {
+    return undefined;
+  }
+
+  try {
+    return truncateText(JSON.stringify(value), maxChars);
+  } catch {
+    return undefined;
+  }
+}
+
+function extractMessages(payload: unknown): Array<Record<string, unknown>> {
+  const record = asRecord(payload);
+  const candidates = [
+    record?.messages,
+    record?.messageHistory,
+    record?.conversation,
+    asRecord(record?.prompt)?.messages,
+    asRecord(record?.input)?.messages
+  ];
+
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) {
+      return candidate.flatMap((entry) => {
+        const next = asRecord(entry);
+        return next ? [next] : [];
+      });
+    }
+  }
+
+  return [];
+}
+
+function messageText(message: Record<string, unknown>) {
+  const direct = readString(message.content) ?? readString(message.text);
+  if (direct) {
+    return direct;
+  }
+
+  const parts = Array.isArray(message.content) ? message.content : Array.isArray(message.parts) ? message.parts : [];
+  const chunks = parts.flatMap((part) => {
+    const record = asRecord(part);
+    const text = readString(record?.text) ?? readString(record?.content);
+    return text ? [text] : [];
+  });
+
+  return chunks.length > 0 ? chunks.join("\n") : undefined;
+}
+
+function messageRole(message: Record<string, unknown>) {
+  return readString(message.role) ?? readString(message.author) ?? readString(asRecord(message.message)?.role);
+}
+
+function extractPromptContext(payload: unknown) {
+  const messages = extractMessages(payload);
+
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const current = messages[index];
+    if (!current) {
+      continue;
+    }
+
+    const role = messageRole(current);
+    if (role !== "user") {
+      continue;
+    }
+
+    const text = truncateText(messageText(current), 500);
+    let preceding: string | undefined;
+
+    for (let prior = index - 1; prior >= 0; prior -= 1) {
+      const candidate = messages[prior];
+      if (!candidate || messageRole(candidate) !== "assistant") {
+        continue;
+      }
+
+      preceding = truncateText(messageText(candidate), 200);
+      break;
+    }
+
+    if (!text && !preceding) {
+      return null;
+    }
+
+    return { text, preceding };
+  }
+
+  return null;
+}
+
+function extractConversation(payload: unknown): ConversationTurn[] {
+  return extractMessages(payload)
+    .map((message) => {
+      const role = messageRole(message);
+      const content = truncateText(messageText(message), 500);
+      return role && content ? { role, content } : null;
+    })
+    .flatMap((turn) => (turn ? [turn] : []))
+    .slice(-8);
+}
+
+function summarizeToolArgs(event: unknown) {
+  const record = asRecord(event);
+  const toolName = readString(record?.toolName) ?? readString(record?.name) ?? "tool";
+  const params = record?.params ?? record?.arguments ?? record?.args ?? record?.input;
+  const summary = summarizeUnknown(params, 240);
+
+  return truncateText(summary ? `${toolName} ${summary}` : toolName, 300);
+}
+
+function summarizeToolOutput(event: unknown) {
+  const record = asRecord(event);
+  return summarizeUnknown(record?.result ?? record?.output ?? record?.response ?? record?.content, 500);
+}
 
 function resolveRuntime(
   config: SherpaPluginConfig | undefined,
@@ -148,7 +287,8 @@ const sherpaConfigZodSchema = z.object({
     injectThreshold: z.number().optional(),
     maxCandidates: z.number().optional(),
     maxRisks: z.number().optional(),
-    maxChars: z.number().optional()
+    maxChars: z.number().optional(),
+    interpreterModel: z.string().optional()
   }).optional(),
   capture: z.object({
     messages: z.boolean().optional(),
@@ -281,6 +421,10 @@ export default definePluginEntry({
         return;
       }
 
+      if (ctx.sessionKey) {
+        promptContextCache.delete(ctx.sessionKey);
+      }
+
       const runtime = resolveRuntime(pluginConfig, ctx);
       const terminal = caseRouter.closeActiveCase({
         sessionKey: ctx.sessionKey,
@@ -392,7 +536,11 @@ export default definePluginEntry({
 
       const eventRecord = buildDispatchEvent(
         baseResolved,
-        { ...event, ...ctx },
+        {
+          ...event,
+          ...ctx,
+          ...(ctx.sessionKey ? promptContextCache.get(ctx.sessionKey) ?? {} : {})
+        },
         { caseId: activeCaseId }
       );
       if (!eventRecord) {
@@ -424,11 +572,19 @@ export default definePluginEntry({
       enqueueCapture(
         maintenance,
         runtime,
-        buildToolStartEvent(runtime.resolved, { ...event, ...ctx }, { caseId })
+        buildToolStartEvent(
+          runtime.resolved,
+          {
+            ...event,
+            ...ctx,
+            ...(summarizeToolArgs(event) ? { toolArgsSummary: summarizeToolArgs(event) } : {})
+          },
+          { caseId }
+        )
       );
     });
 
-    api.on("before_prompt_build", async (_event, ctx) => {
+    api.on("before_prompt_build", async (event, ctx) => {
       const decision = resolveSherpaPolicyDecision(baseResolved, {
         agentId: ctx.agentId,
         sessionKey: ctx.sessionKey,
@@ -440,6 +596,16 @@ export default definePluginEntry({
 
       if (ctx.trigger && ctx.trigger !== "user") {
         return;
+      }
+
+      if (ctx.sessionKey) {
+        const promptContext = extractPromptContext(event ?? ctx);
+        if (promptContext) {
+          promptContextCache.set(ctx.sessionKey, {
+            ...(promptContext.text ? { text: promptContext.text } : {}),
+            ...(promptContext.preceding ? { preceding: promptContext.preceding } : {})
+          });
+        }
       }
 
       const caseId =
@@ -456,36 +622,36 @@ export default definePluginEntry({
         }) ?? `session:${ctx.sessionKey}`;
 
       try {
-        // Cooldown: don't fire advisory for the same case within 2 minutes
-        const lastAdvisory = advisoryCooldowns.get(caseId);
-        if (lastAdvisory && Date.now() - lastAdvisory < ADVISORY_COOLDOWN_MS) {
-          return;
-        }
-
         const runtime = resolveRuntime(pluginConfig, {
           agentId: decision.agentId,
           caseId
         });
         await daemonSupervisor.ensureReady(runtime.resolved);
         const engine = runtime.backend;
-        const [state, next, risks] = await Promise.all([
+        const [state, signalsResult] = await Promise.all([
           engine.workflowState(caseId),
-          engine.workflowNext(caseId, baseResolved.advisory.maxCandidates),
-          engine.workflowRisks(caseId, baseResolved.advisory.maxRisks)
+          engine.workflowSignals(caseId, baseResolved.advisory.maxCandidates)
         ]);
-        const advisory = buildSherpaAdvisory({
+
+        const strongSignals = signalsResult.signals.filter((signal) => {
+          const responseCount = Object.values(signal.userResponseDist).reduce((sum, value) => sum + value, 0);
+          return signal.probability >= baseResolved.advisory.injectThreshold || signal.support >= 2 || responseCount >= 2;
+        });
+
+        if (state.confidence < baseResolved.advisory.injectThreshold || strongSignals.length === 0) {
+          return;
+        }
+
+        const advisory = await interpretAdvisory({
           config: baseResolved,
-          state,
-          next,
-          risks
+          signals: strongSignals,
+          conversation: extractConversation(event ?? ctx)
         });
 
         if (!advisory) {
           return;
         }
 
-        // Track advisory injection count + cooldown
-        advisoryCooldowns.set(caseId, Date.now());
         try {
           await runtime.backend.trackAdvisoryInjection();
         } catch {
@@ -523,7 +689,16 @@ export default definePluginEntry({
       enqueueCapture(
         maintenance,
         runtime,
-        buildToolFinishEvent(runtime.resolved, { ...event, ...ctx }, { caseId })
+        buildToolFinishEvent(
+          runtime.resolved,
+          {
+            ...event,
+            ...ctx,
+            ...(summarizeToolArgs(event) ? { toolArgsSummary: summarizeToolArgs(event) } : {}),
+            ...(summarizeToolOutput(event) ? { outputSnippet: summarizeToolOutput(event) } : {})
+          },
+          { caseId }
+        )
       );
     });
 
@@ -563,6 +738,27 @@ export default definePluginEntry({
           await daemonSupervisor.ensureReady(runtime.resolved);
           const engine = runtime.backend;
           return jsonResult(await engine.workflowNext(params.caseId, params.limit ?? 5));
+        } catch (error) {
+          return unavailableResult(error);
+        }
+      }
+    });
+
+    api.registerTool({
+      name: "workflow_signals",
+      label: "Workflow Signals",
+      description: "Return raw behavioral signals from the current path",
+      parameters: Type.Object({
+        caseId: Type.String(),
+        agentId: Type.Optional(Type.String()),
+        limit: Type.Optional(Type.Integer({ minimum: 1 }))
+      }),
+      async execute(_id, params) {
+        try {
+          const runtime = resolveRuntime(pluginConfig, params);
+          await daemonSupervisor.ensureReady(runtime.resolved);
+          const engine = runtime.backend;
+          return jsonResult(await engine.workflowSignals(params.caseId, params.limit ?? 5));
         } catch (error) {
           return unavailableResult(error);
         }

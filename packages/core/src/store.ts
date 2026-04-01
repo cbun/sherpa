@@ -34,6 +34,7 @@ function migrateGraphSchema(db: DatabaseSyncType) {
   ensureColumn(db, "events", "entities_json", "TEXT NOT NULL DEFAULT '[]'");
   ensureColumn(db, "events", "metrics_json", "TEXT NOT NULL DEFAULT '{}'");
   ensureColumn(db, "events", "meta_json", "TEXT NOT NULL DEFAULT '{}'");
+  ensureColumn(db, "events", "context", "TEXT");
 
   ensureColumn(db, "cases", "agent_id", "TEXT NOT NULL DEFAULT 'main'");
   ensureColumn(db, "cases", "event_count", "INTEGER NOT NULL DEFAULT 0");
@@ -50,6 +51,7 @@ function migrateGraphSchema(db: DatabaseSyncType) {
   ensureColumn(db, "state_edges", "min_duration_ms", "INTEGER");
   ensureColumn(db, "state_edges", "max_duration_ms", "INTEGER");
   ensureColumn(db, "state_edges", "last_seen_at", "TEXT NOT NULL DEFAULT '1970-01-01T00:00:00.000Z'");
+  ensureColumn(db, "state_edges", "response_dist", "TEXT");
 }
 
 export async function withGraphStore<T>(graphPath: string, handler: (db: DatabaseSyncType) => T): Promise<T> {
@@ -75,7 +77,8 @@ export async function withGraphStore<T>(graphPath: string, handler: (db: Databas
         labels_json TEXT NOT NULL,
         entities_json TEXT NOT NULL,
         metrics_json TEXT NOT NULL,
-        meta_json TEXT NOT NULL
+        meta_json TEXT NOT NULL,
+        context TEXT
       );
 
       CREATE TABLE IF NOT EXISTS cases (
@@ -101,6 +104,7 @@ export async function withGraphStore<T>(graphPath: string, handler: (db: Databas
         min_duration_ms INTEGER,
         max_duration_ms INTEGER,
         last_seen_at TEXT NOT NULL,
+        response_dist TEXT,
         PRIMARY KEY (order_n, state_key, next_event)
       );
 
@@ -120,6 +124,7 @@ export async function withGraphStore<T>(graphPath: string, handler: (db: Databas
         last_seen_at TEXT NOT NULL
       );
 
+      -- Deprecated in Phase 5: retained for backward compatibility, no longer populated.
       CREATE TABLE IF NOT EXISTS risk_metrics (
         state_key TEXT NOT NULL,
         branch TEXT NOT NULL,
@@ -131,6 +136,7 @@ export async function withGraphStore<T>(graphPath: string, handler: (db: Databas
         PRIMARY KEY (state_key, branch, kind)
       );
 
+      -- Deprecated in Phase 5: retained for backward compatibility, no longer populated.
       CREATE TABLE IF NOT EXISTS success_metrics (
         state_key TEXT NOT NULL,
         branch TEXT NOT NULL,
@@ -172,8 +178,8 @@ export function insertEvents(db: DatabaseSyncType, events: SherpaEvent[]) {
   const statement = db.prepare(`
     INSERT INTO events (
       event_id, schema_version, agent_id, case_id, ts, source, type, actor, outcome,
-      labels_json, entities_json, metrics_json, meta_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      labels_json, entities_json, metrics_json, meta_json, context
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   for (const event of events) {
@@ -190,7 +196,8 @@ export function insertEvents(db: DatabaseSyncType, events: SherpaEvent[]) {
       json(event.labels),
       json(event.entities),
       json(event.metrics),
-      json(event.meta)
+      json(event.meta),
+      event.context ? json(event.context) : null
     );
   }
 }
@@ -232,14 +239,15 @@ export function insertStateEdges(
     minDurationMs: number | null;
     maxDurationMs: number | null;
     lastSeenAt: string;
+    responseDist: Record<string, number>;
   }>
 ) {
   const statement = db.prepare(`
     INSERT INTO state_edges (
       order_n, state_key, next_event, support, success_count, failure_count,
       terminal_success_count, terminal_failure_count, terminal_unknown_count,
-      total_duration_ms, min_duration_ms, max_duration_ms, last_seen_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      total_duration_ms, min_duration_ms, max_duration_ms, last_seen_at, response_dist
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   for (const row of rows) {
@@ -256,7 +264,8 @@ export function insertStateEdges(
       row.totalDurationMs,
       row.minDurationMs,
       row.maxDurationMs,
-      row.lastSeenAt
+      row.lastSeenAt,
+      json(row.responseDist)
     );
   }
 }

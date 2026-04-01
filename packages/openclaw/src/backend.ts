@@ -19,6 +19,7 @@ import {
   type WorkflowRecallMode,
   type WorkflowRecallResult,
   type WorkflowRisksResult,
+  type WorkflowSignalsResult,
   type WorkflowStateResult,
   type WorkflowStatusResult
 } from "@sherpa/core";
@@ -38,6 +39,7 @@ export interface SherpaBackend {
   taxonomyReport(options?: TaxonomyReportOptions): Promise<TaxonomyReportResult>;
   workflowState(caseId: string, maxOrder?: number): Promise<WorkflowStateResult>;
   workflowNext(caseId: string, limit?: number): Promise<WorkflowNextResult>;
+  workflowSignals(caseId: string, limit?: number): Promise<WorkflowSignalsResult>;
   workflowRisks(caseId: string, limit?: number): Promise<WorkflowRisksResult>;
   workflowRecall(caseId: string, mode?: WorkflowRecallMode, limit?: number): Promise<WorkflowRecallResult>;
   collectMetrics(): Promise<SherpaMetrics>;
@@ -111,6 +113,10 @@ class InProcessSherpaBackend implements SherpaBackend {
 
   workflowNext(caseId: string, limit?: number) {
     return this.engine.workflowNext(caseId, limit);
+  }
+
+  workflowSignals(caseId: string, limit?: number) {
+    return this.engine.workflowSignals(caseId, limit);
   }
 
   workflowRisks(caseId: string, limit?: number) {
@@ -278,6 +284,18 @@ export class CliSherpaBackend implements SherpaBackend {
     );
   }
 
+  workflowSignals(caseId: string, limit?: number) {
+    return this.runJson<WorkflowSignalsResult>(
+      [
+        ...buildCliSharedArgs(this.resolved),
+        "workflow-signals",
+        "--case-id",
+        caseId,
+        ...(limit !== undefined ? ["--limit", String(limit)] : [])
+      ]
+    );
+  }
+
   workflowRisks(caseId: string, limit?: number) {
     return this.runJson<WorkflowRisksResult>(
       [
@@ -424,6 +442,13 @@ export class HttpSherpaBackend implements SherpaBackend {
 
   workflowNext(caseId: string, limit?: number) {
     return this.call<WorkflowNextResult>("workflowNext", {
+      caseId,
+      ...(limit !== undefined ? { limit } : {})
+    });
+  }
+
+  workflowSignals(caseId: string, limit?: number) {
+    return this.call<WorkflowSignalsResult>("workflowSignals", {
       caseId,
       ...(limit !== undefined ? { limit } : {})
     });

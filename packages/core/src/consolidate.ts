@@ -11,44 +11,38 @@ export type UserIntent =
   | "followup"
   | "escalation"
   | "approval"
-  | "rejection"
+  | "abandonment"
+  | "pivot"
   | "unknown";
 
 export type Domain =
-  | "code"
+  | "config"
+  | "debug"
+  | "refactor"
   | "research"
   | "ops"
+  | "test"
   | "communication"
-  | "home"
-  | "finance"
-  | "health"
   | "creative"
   | "unknown";
 
-export type SessionShape =
-  | "exploration"
-  | "execution"
-  | "debugging"
-  | "review"
-  | "planning"
+export type Sentiment =
+  | "positive"
+  | "neutral"
+  | "negative"
+  | "frustrated"
   | "unknown";
 
-export type FeedbackSignal =
-  | "accepted"
-  | "corrected"
-  | "pivoted"
-  | "escalated"
-  | null;
-
-export interface EventEnrichment {
+export interface ClassifyResult {
   eventId: string;
   enrichedType: string;
   intent: UserIntent;
   domain: Domain;
-  sessionShape: SessionShape;
-  feedbackSignal: FeedbackSignal;
+  sentiment: Sentiment;
   confidence: number;
 }
+
+export type EventEnrichment = ClassifyResult;
 
 export interface ConsolidationBatch {
   events: Array<{
@@ -60,6 +54,7 @@ export interface ConsolidationBatch {
     preview: string;
     caseId: string;
     ts: string;
+    context?: SherpaEvent["context"];
   }>;
 }
 
@@ -75,7 +70,7 @@ export interface ConsolidationResult {
 
 export interface ConsolidateOptions {
   /** LLM classification function — injected by caller */
-  classify: (batch: ConsolidationBatch) => Promise<EventEnrichment[]>;
+  classify: (batch: ConsolidationBatch) => Promise<ClassifyResult[]>;
   /** Events per LLM call (default: 50) */
   batchSize?: number;
   /** Preview enrichments without writing (default: false) */
@@ -99,31 +94,43 @@ export const CONSOLIDATION_SYSTEM_PROMPT = `You are a workflow event classifier 
 You will receive a batch of events from agent sessions. For each event, classify it along these dimensions:
 
 1. **enrichedType** — A more specific event type:
-   - User messages: \`message.user.{intent}\` (e.g., \`message.user.command\`, \`message.user.question\`)
+   - User messages: \`message.user.{intent}\` (e.g., \`message.user.command\`, \`message.user.correction\`, \`message.user.pivot\`)
    - Tool events: \`{family}.{toolName}.{phase}\` (e.g., \`tool.read.started\`, \`web.web_search.succeeded\`)
    - For tool events, extract the tool name from labels (format: \`tool:{name}\`)
-   - Keep session/task events as-is
+   - Keep session/task events bounded and operational
 
-2. **intent** (for user messages only, "unknown" for non-user events):
-   - command: user tells the agent to do something
-   - question: user asks for information
-   - correction: user corrects or refines the agent's previous output
-   - followup: user continues the current thread without changing direction
-   - escalation: user asks for more detail, a different approach, or elevates urgency
-   - approval: user confirms or accepts the agent's proposal
-   - rejection: user rejects or declines the agent's proposal
+2. **intent** vocabulary:
+   - command
+   - question
+   - correction
+   - followup
+   - escalation
+   - approval
+   - abandonment
+   - pivot
+   - unknown
 
-3. **domain**: code, research, ops, communication, home, finance, health, creative, unknown
+3. **domain** vocabulary:
+   - config
+   - debug
+   - refactor
+   - research
+   - ops
+   - test
+   - communication
+   - creative
+   - unknown
 
-4. **sessionShape**: exploration (open-ended), execution (building/doing), debugging (fixing), review (evaluating), planning (strategizing), unknown
+4. **sentiment** vocabulary:
+   - positive
+   - neutral
+   - negative
+   - frustrated
+   - unknown
 
-5. **feedbackSignal** (null unless this is a user message following agent output):
-   - accepted: user proceeds without objection
-   - corrected: user immediately corrects
-   - pivoted: user changes direction entirely
-   - escalated: user asks for a different approach
+5. **confidence**: 0.0-1.0, your confidence in the classification
 
-6. **confidence**: 0.0–1.0, your confidence in the classification
+Use \`context.text\` when present as the primary classification signal. \`context.preceding\` and \`context.toolArgs\` are supplemental hints.
 
 Respond with JSON only:
 {
@@ -133,8 +140,7 @@ Respond with JSON only:
       "enrichedType": "...",
       "intent": "...",
       "domain": "...",
-      "sessionShape": "...",
-      "feedbackSignal": null,
+      "sentiment": "...",
       "confidence": 0.92
     }
   ]
@@ -143,9 +149,9 @@ Respond with JSON only:
 Rules:
 - Classify EVERY event in the batch — one enrichment per eventId
 - For tool events, the enrichedType should include the actual tool name from labels
-- For non-user events, set intent to "unknown"
-- Be conservative with confidence — if context is insufficient, use 0.5 and "unknown"
-- Domain and sessionShape should be inferred from the full batch context, not individual events`;
+- For non-user events, set intent to \`unknown\` unless the event itself clearly encodes a user response
+- Be conservative with confidence — if context is insufficient, use lower confidence and \`unknown\` labels where needed
+- Prefer more specific enriched types when the available context supports them`;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -174,7 +180,8 @@ export function buildBatch(events: SherpaEvent[]): ConsolidationBatch {
       labels: event.labels,
       preview: getPreview(event),
       caseId: event.caseId,
-      ts: event.ts
+      ts: event.ts,
+      ...(event.context ? { context: event.context } : {})
     }))
   };
 }
@@ -189,8 +196,7 @@ export function applyEnrichment(event: SherpaEvent, enrichment: EventEnrichment,
       ...event.labels,
       ...(enrichment.intent !== "unknown" ? [`intent:${enrichment.intent}`] : []),
       ...(enrichment.domain !== "unknown" ? [`domain:${enrichment.domain}`] : []),
-      ...(enrichment.sessionShape !== "unknown" ? [`session-shape:${enrichment.sessionShape}`] : []),
-      ...(enrichment.feedbackSignal ? [`feedback:${enrichment.feedbackSignal}`] : [])
+      ...(enrichment.sentiment !== "unknown" ? [`sentiment:${enrichment.sentiment}`] : [])
     ],
     meta: {
       ...meta,
@@ -198,7 +204,10 @@ export function applyEnrichment(event: SherpaEvent, enrichment: EventEnrichment,
       consolidated: true,
       consolidatedAt: new Date().toISOString(),
       consolidationModel: model,
-      consolidationConfidence: enrichment.confidence
+      consolidationConfidence: enrichment.confidence,
+      consolidationIntent: enrichment.intent,
+      consolidationDomain: enrichment.domain,
+      consolidationSentiment: enrichment.sentiment
     }
   };
 }

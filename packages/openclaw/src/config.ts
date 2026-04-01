@@ -33,6 +33,7 @@ export interface SherpaPluginConfig {
     maxCandidates?: number;
     maxRisks?: number;
     maxChars?: number;
+    interpreterModel?: string;
   };
   taxonomy?: {
     rules?: Array<{
@@ -133,6 +134,7 @@ export interface ResolvedSherpaPluginConfig {
     maxCandidates: number;
     maxRisks: number;
     maxChars: number;
+    interpreterModel?: string;
   };
   taxonomy: {
     rules: Array<{
@@ -277,7 +279,8 @@ export function resolveSherpaPluginConfig(
       injectThreshold: config?.advisory?.injectThreshold ?? 0.75,
       maxCandidates: config?.advisory?.maxCandidates ?? 3,
       maxRisks: config?.advisory?.maxRisks ?? 2,
-      maxChars: config?.advisory?.maxChars ?? 900
+      maxChars: config?.advisory?.maxChars ?? 900,
+      ...(config?.advisory?.interpreterModel ? { interpreterModel: config.advisory.interpreterModel } : {})
     },
     taxonomy: {
       rules:

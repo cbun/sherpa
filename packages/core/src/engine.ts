@@ -12,9 +12,7 @@ import {
   insertCases,
   insertConfigVersion,
   insertEvents,
-  insertRiskMetrics,
   insertStateEdges,
-  insertSuccessMetrics,
   insertWorkflows,
   resetDerivedTables,
   setMetadata,
@@ -28,6 +26,7 @@ import {
   type ExportResult,
   type GcResult,
   type ImportResult,
+  type Signal,
   type SherpaEngineOptions,
   type SherpaEvent,
   type SherpaEventInput,
@@ -40,6 +39,7 @@ import {
   type WorkflowRecallResult,
   type WorkflowRisk,
   type WorkflowRisksResult,
+  type WorkflowSignalsResult,
   type WorkflowStateResult,
   type WorkflowStatusResult,
   type TaxonomyReportOptions,
@@ -61,6 +61,7 @@ type StoredEventRow = {
   entities_json: string;
   metrics_json: string;
   meta_json: string;
+  context: string | null;
 };
 
 type StateEdgeRow = {
@@ -72,6 +73,7 @@ type StateEdgeRow = {
   terminal_failure_count: number;
   terminal_unknown_count: number;
   total_duration_ms: number;
+  response_dist: string | null;
 };
 
 type TaxonomyRow = {
@@ -109,7 +111,8 @@ function deserializeEvent(row: StoredEventRow): SherpaEvent {
     labels: JSON.parse(row.labels_json) as string[],
     entities: JSON.parse(row.entities_json) as string[],
     metrics: JSON.parse(row.metrics_json) as Record<string, number>,
-    meta: JSON.parse(row.meta_json) as Record<string, unknown>
+    meta: JSON.parse(row.meta_json) as Record<string, unknown>,
+    ...(row.context ? { context: JSON.parse(row.context) as SherpaEvent["context"] } : {})
   };
 }
 
@@ -134,6 +137,21 @@ function eventualSuccessRate(row: StateEdgeRow) {
 function eventualFailureRate(row: StateEdgeRow) {
   const knownOutcomes = Number(row.terminal_success_count) + Number(row.terminal_failure_count);
   return knownOutcomes === 0 ? null : Number((Number(row.terminal_failure_count) / knownOutcomes).toFixed(2));
+}
+
+function parseResponseDist(value: string | null) {
+  if (!value) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(value) as Record<string, number>;
+    return Object.fromEntries(
+      Object.entries(parsed).filter((entry): entry is [string, number] => typeof entry[0] === "string" && typeof entry[1] === "number")
+    );
+  } catch {
+    return {};
+  }
 }
 
 function branchScore(params: {
@@ -423,93 +441,7 @@ export class SherpaEngine {
         }))
       );
 
-      // Materialize success metrics from state_edges (per state_key + branch)
-      const successMetricRows: Array<{
-        stateKey: string;
-        branch: string;
-        successRate: number | null;
-        failureRate: number | null;
-        support: number;
-        meanTimeToNextMs: number | null;
-        lastSeenAt: string;
-      }> = [];
-      for (const edge of stateEdgeRows) {
-        if (edge.orderN !== this.defaultOrder) {
-          continue;
-        }
-        const knownOutcomes = edge.terminalSuccessCount + edge.terminalFailureCount;
-        successMetricRows.push({
-          stateKey: edge.stateKey,
-          branch: edge.nextEvent,
-          successRate: knownOutcomes === 0 ? null : Number((edge.terminalSuccessCount / knownOutcomes).toFixed(3)),
-          failureRate: knownOutcomes === 0 ? null : Number((edge.terminalFailureCount / knownOutcomes).toFixed(3)),
-          support: edge.support,
-          meanTimeToNextMs: edge.support === 0 ? null : Number((edge.totalDurationMs / edge.support).toFixed(0)),
-          lastSeenAt: edge.lastSeenAt
-        });
-      }
-      insertSuccessMetrics(db, successMetricRows);
-
-      // Materialize risk metrics from state_edges (per state_key, branches with elevated failure/stall)
-      const riskMetricRows: Array<{
-        stateKey: string;
-        branch: string;
-        kind: string;
-        probability: number;
-        relativeRisk: number;
-        support: number;
-        lastSeenAt: string;
-      }> = [];
-      // Group edges by state_key at default order
-      const edgesByState = new Map<string, typeof stateEdgeRows>();
-      for (const edge of stateEdgeRows) {
-        if (edge.orderN !== this.defaultOrder) {
-          continue;
-        }
-        const existing = edgesByState.get(edge.stateKey);
-        if (existing) {
-          existing.push(edge);
-        } else {
-          edgesByState.set(edge.stateKey, [edge]);
-        }
-      }
-      for (const [stateKey, edges] of edgesByState) {
-        const totalSupport = edges.reduce((sum, edge) => sum + edge.support, 0);
-        const baselineFailureCount = edges.reduce((sum, edge) => sum + edge.terminalFailureCount, 0);
-        const baselineUnknownCount = edges.reduce((sum, edge) => sum + edge.terminalUnknownCount, 0);
-        const baselineFailureRate = baselineFailureCount / Math.max(1, totalSupport);
-        const baselineStallRate = baselineUnknownCount / Math.max(1, totalSupport);
-
-        for (const edge of edges) {
-          const probability = Number((edge.support / totalSupport).toFixed(3));
-          const failureRate = edge.terminalFailureCount / Math.max(1, edge.support);
-          const stallRate = edge.terminalUnknownCount / Math.max(1, edge.support);
-
-          if (edge.terminalFailureCount > 0 && failureRate > baselineFailureRate) {
-            riskMetricRows.push({
-              stateKey,
-              branch: edge.nextEvent,
-              kind: "failure",
-              probability,
-              relativeRisk: Number(relativeRisk(failureRate, baselineFailureRate).toFixed(3)),
-              support: edge.support,
-              lastSeenAt: edge.lastSeenAt
-            });
-          }
-          if (edge.terminalUnknownCount > 0 && stallRate > baselineStallRate) {
-            riskMetricRows.push({
-              stateKey,
-              branch: edge.nextEvent,
-              kind: "stall",
-              probability,
-              relativeRisk: Number(relativeRisk(stallRate, baselineStallRate).toFixed(3)),
-              support: edge.support,
-              lastSeenAt: edge.lastSeenAt
-            });
-          }
-        }
-      }
-      insertRiskMetrics(db, riskMetricRows);
+      // Deprecated in Phase 5: risk_metrics and success_metrics tables remain empty for backward compatibility.
 
       // Record config version
       const configHash = `${this.defaultOrder}-${this.minOrder}-${this.maxOrder}-${this.minSupport}`;
@@ -836,7 +768,7 @@ export class SherpaEngine {
           `
             SELECT next_event, support, success_count, failure_count,
                    terminal_success_count, terminal_failure_count, terminal_unknown_count,
-                   total_duration_ms
+                   total_duration_ms, response_dist
             FROM state_edges
             WHERE order_n = ? AND state_key = ?
             ORDER BY support DESC, next_event ASC
@@ -863,6 +795,74 @@ export class SherpaEngine {
     return null;
   }
 
+  private readSignalBasis(
+    db: DatabaseSyncType,
+    state: string[],
+    nextEvent: string,
+    matchedOrder: number,
+    limit: number
+  ): Signal["basis"] {
+    const rows = db
+      .prepare(
+        `
+          SELECT event_id, case_id, ts, type, actor, context
+          FROM events
+          ORDER BY case_id ASC, ts ASC, event_id ASC
+        `
+      )
+      .all() as Array<{
+      event_id: string;
+      case_id: string;
+      ts: string;
+      type: string;
+      actor: string;
+      context: string | null;
+    }>;
+
+    const eventsByCase = new Map<string, typeof rows>();
+    for (const row of rows) {
+      const current = eventsByCase.get(row.case_id) ?? [];
+      current.push(row);
+      eventsByCase.set(row.case_id, current);
+    }
+
+    const basis: Signal["basis"] = [];
+    for (const [caseId, caseRows] of eventsByCase) {
+      for (let index = matchedOrder - 1; index < caseRows.length - 1; index += 1) {
+        const history = caseRows.slice(index - matchedOrder + 1, index + 1).map((row) => row.type);
+        const candidateNext = caseRows[index + 1];
+        if (!candidateNext) {
+          continue;
+        }
+
+        if (
+          history.length === matchedOrder &&
+          history.every((event, historyIndex) => event === state[historyIndex]) &&
+          candidateNext.type === nextEvent
+        ) {
+          const context = candidateNext.context ? (JSON.parse(candidateNext.context) as SherpaEvent["context"]) : undefined;
+          basis.push({
+            caseId,
+            ...(context?.text
+              ? { context: context.text }
+              : context?.toolArgs
+                ? { context: context.toolArgs }
+                : context?.preceding
+                  ? { context: context.preceding }
+                  : {})
+          });
+          break;
+        }
+      }
+
+      if (basis.length >= limit) {
+        break;
+      }
+    }
+
+    return basis.slice(0, limit);
+  }
+
   async workflowState(caseId: string, maxOrder = this.defaultOrder): Promise<WorkflowStateResult> {
     await this.init();
 
@@ -871,7 +871,7 @@ export class SherpaEngine {
         .prepare(
           `
             SELECT event_id, schema_version, agent_id, case_id, ts, source, type, actor, outcome,
-                   labels_json, entities_json, metrics_json, meta_json
+                   labels_json, entities_json, metrics_json, meta_json, context
             FROM events
             WHERE case_id = ?
             ORDER BY ts DESC, event_id DESC
@@ -941,6 +941,7 @@ export class SherpaEngine {
               failureRate,
               meanTimeToNextMs:
                 Number(row.support) === 0 ? null : Number((Number(row.total_duration_ms) / Number(row.support)).toFixed(0)),
+              userResponseDist: parseResponseDist(row.response_dist),
               matchedOrder: match.matchedOrder,
               score,
               reason: `Matched ${match.matchedOrder}-event suffix with ${row.support} prior observations`
@@ -978,7 +979,7 @@ export class SherpaEngine {
     });
   }
 
-  async workflowRisks(caseId: string, limit = 3): Promise<WorkflowRisksResult> {
+  async workflowSignals(caseId: string, limit = 5): Promise<WorkflowSignalsResult> {
     await this.init();
     const state = await this.workflowState(caseId, this.defaultOrder);
 
@@ -989,76 +990,90 @@ export class SherpaEngine {
         return {
           caseId,
           state: state.state,
-          risks: []
+          signals: []
         };
       }
 
-      const baselineFailureRate =
-        match.rows.reduce((sum, row) => sum + Number(row.terminal_failure_count), 0) / Math.max(1, match.totalSupport);
-      const baselineStallRate =
-        match.rows.reduce((sum, row) => sum + Number(row.terminal_unknown_count), 0) / Math.max(1, match.totalSupport);
+      const signals = match.rows
+        .filter((row) => Number(row.support) >= this.minSupport)
+        .map((row) => ({
+          state: match.currentState,
+          prediction: row.next_event,
+          probability: Number((Number(row.support) / match.totalSupport).toFixed(2)),
+          support: Number(row.support),
+          userResponseDist: parseResponseDist(row.response_dist),
+          basis: this.readSignalBasis(db, match.currentState, row.next_event, match.matchedOrder, 3)
+        }))
+        .sort((left, right) => {
+          if (right.support !== left.support) {
+            return right.support - left.support;
+          }
 
-      const risks: WorkflowRisk[] = [];
+          if (right.probability !== left.probability) {
+            return right.probability - left.probability;
+          }
 
-      for (const row of match.rows) {
-        const branchProbability = Number((Number(row.support) / match.totalSupport).toFixed(2));
-        const failureRate = Number(row.terminal_failure_count) / Math.max(1, Number(row.support));
-        const stallRate = Number(row.terminal_unknown_count) / Math.max(1, Number(row.support));
-        const confidence = riskConfidence(Number(row.support), match.matchedOrder, this.defaultOrder);
-
-        if (Number(row.terminal_failure_count) > 0 && failureRate > baselineFailureRate) {
-          const branchRelativeRisk = relativeRisk(failureRate, baselineFailureRate);
-          risks.push({
-            branch: row.next_event,
-            kind: "failure",
-            probability: branchProbability,
-            relativeRisk: branchRelativeRisk,
-            support: Number(row.support),
-            matchedOrder: match.matchedOrder,
-            confidence,
-            score: Number((branchProbability * branchRelativeRisk * confidence).toFixed(3)),
-            suggestedIntervention: suggestIntervention(row.next_event, "failure")
-          });
-        }
-
-        if (Number(row.terminal_unknown_count) > 0 && stallRate > baselineStallRate) {
-          const branchRelativeRisk = relativeRisk(stallRate, baselineStallRate);
-          risks.push({
-            branch: row.next_event,
-            kind: "stall",
-            probability: branchProbability,
-            relativeRisk: branchRelativeRisk,
-            support: Number(row.support),
-            matchedOrder: match.matchedOrder,
-            confidence,
-            score: Number((branchProbability * branchRelativeRisk * confidence).toFixed(3)),
-            suggestedIntervention: suggestIntervention(row.next_event, "stall")
-          });
-        }
-      }
+          return left.prediction.localeCompare(right.prediction);
+        })
+        .slice(0, limit);
 
       return {
         caseId,
         state: match.currentState,
-        risks: risks
-          .sort((left, right) => {
-            if (right.score !== left.score) {
-              return right.score - left.score;
-            }
-
-            if (right.relativeRisk !== left.relativeRisk) {
-              return right.relativeRisk - left.relativeRisk;
-            }
-
-            if (right.probability !== left.probability) {
-              return right.probability - left.probability;
-            }
-
-            return right.support - left.support;
-          })
-          .slice(0, limit)
+        signals
       };
     });
+  }
+
+  async workflowRisks(caseId: string, limit = 3): Promise<WorkflowRisksResult> {
+    const signals = await this.workflowSignals(caseId, Math.max(limit * 2, limit));
+    const risks: WorkflowRisk[] = signals.signals
+      .map((signal) => {
+        const correction = signal.userResponseDist.correction ?? 0;
+        const escalation = signal.userResponseDist.escalation ?? 0;
+        const abandonment = signal.userResponseDist.abandonment ?? 0;
+        const negative = correction + escalation + abandonment;
+        const totalResponses = Object.values(signal.userResponseDist).reduce((sum, value) => sum + value, 0);
+        const negativeShare = totalResponses === 0 ? 0 : negative / totalResponses;
+
+        if (negativeShare <= 0.34 || negative === 0) {
+          return null;
+        }
+
+        const kind: WorkflowRisk["kind"] = abandonment >= Math.max(correction, escalation) ? "stall" : "failure";
+        const confidence = riskConfidence(signal.support, signal.state.length, this.defaultOrder);
+
+        return {
+          branch: signal.prediction,
+          kind,
+          probability: signal.probability,
+          relativeRisk: Number((1 + negativeShare).toFixed(2)),
+          support: signal.support,
+          matchedOrder: signal.state.length,
+          confidence,
+          score: Number((signal.probability * negativeShare * confidence).toFixed(3)),
+          suggestedIntervention: suggestIntervention(signal.prediction, kind)
+        };
+      })
+      .flatMap((risk) => (risk ? [risk] : []))
+      .sort((left, right) => {
+        if (right.score !== left.score) {
+          return right.score - left.score;
+        }
+
+        if (right.relativeRisk !== left.relativeRisk) {
+          return right.relativeRisk - left.relativeRisk;
+        }
+
+        return right.support - left.support;
+      })
+      .slice(0, limit);
+
+    return {
+      caseId,
+      state: signals.state,
+      risks
+    };
   }
 
   async workflowRecall(caseId: string, mode: WorkflowRecallMode = "successful", limit = 3): Promise<WorkflowRecallResult> {
@@ -1105,10 +1120,10 @@ export class SherpaEngine {
         const sequence = db
           .prepare(
             `
-              SELECT type
-              FROM events
-              WHERE case_id = ?
-              ORDER BY ts ASC, event_id ASC
+            SELECT type
+            FROM events
+            WHERE case_id = ?
+            ORDER BY ts ASC, event_id ASC
             `
           )
           .all(candidate.case_id) as Array<{ type: string }>;
@@ -1259,7 +1274,7 @@ export class SherpaEngine {
           `
             SELECT order_n, state_key, next_event, support, success_count, failure_count,
                    terminal_success_count, terminal_failure_count, terminal_unknown_count,
-                   total_duration_ms, min_duration_ms, max_duration_ms, last_seen_at
+                   total_duration_ms, min_duration_ms, max_duration_ms, last_seen_at, response_dist
             FROM state_edges
             ORDER BY support DESC, order_n DESC, state_key ASC, next_event ASC
           `
@@ -1268,7 +1283,7 @@ export class SherpaEngine {
 
       const events = (
         db
-          .prepare("SELECT event_id, schema_version, agent_id, case_id, ts, source, type, actor, outcome, labels_json, entities_json, metrics_json, meta_json FROM events ORDER BY ts ASC, event_id ASC")
+          .prepare("SELECT event_id, schema_version, agent_id, case_id, ts, source, type, actor, outcome, labels_json, entities_json, metrics_json, meta_json, context FROM events ORDER BY ts ASC, event_id ASC")
           .all() as StoredEventRow[]
       ).map(deserializeEvent);
 

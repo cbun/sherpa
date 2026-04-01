@@ -1,6 +1,13 @@
 import { z } from "zod";
 
 const OutcomeSchema = z.enum(["success", "failure", "unknown"]);
+const SherpaEventContextSchema = z
+  .object({
+    text: z.string().max(500).optional(),
+    preceding: z.string().max(200).optional(),
+    toolArgs: z.string().max(300).optional()
+  })
+  .optional();
 
 export const SherpaEventSchema = z.object({
   eventId: z.string().min(1).default(() => crypto.randomUUID()),
@@ -15,7 +22,8 @@ export const SherpaEventSchema = z.object({
   labels: z.array(z.string()).default([]),
   entities: z.array(z.string()).default([]),
   metrics: z.record(z.string(), z.number()).default({}),
-  meta: z.record(z.string(), z.unknown()).default({})
+  meta: z.record(z.string(), z.unknown()).default({}),
+  context: SherpaEventContextSchema
 });
 
 export type SherpaEvent = z.infer<typeof SherpaEventSchema>;
@@ -48,6 +56,7 @@ export interface WorkflowNextCandidate {
   successRate: number | null;
   failureRate: number | null;
   meanTimeToNextMs: number | null;
+  userResponseDist?: Record<string, number>;
   matchedOrder: number;
   score: number;
   reason: string;
@@ -69,6 +78,24 @@ export interface WorkflowRisk {
   confidence: number;
   score: number;
   suggestedIntervention: string;
+}
+
+export interface Signal {
+  state: string[];
+  prediction: string;
+  probability: number;
+  support: number;
+  userResponseDist: Record<string, number>;
+  basis: Array<{
+    caseId: string;
+    context?: string;
+  }>;
+}
+
+export interface WorkflowSignalsResult {
+  caseId: string;
+  state: string[];
+  signals: Signal[];
 }
 
 export interface WorkflowRisksResult {

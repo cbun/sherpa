@@ -32,6 +32,45 @@ describe("capture normalization", () => {
       }
     });
     expect(event?.meta).not.toHaveProperty("preview");
+    expect(event?.context).toBeUndefined();
+  });
+
+  it("captures bounded dispatch and tool context when raw text redaction is disabled", () => {
+    const config = resolveSherpaPluginConfig(
+      {
+        ledger: {
+          redactRawText: false
+        }
+      },
+      { agentId: "alpha" }
+    );
+
+    const dispatchEvent = buildDispatchEvent(config, {
+      sessionKey: "agent:alpha:telegram:direct:user-123",
+      channel: "telegram",
+      senderId: "user-123",
+      content: "x".repeat(700),
+      preceding: "y".repeat(300)
+    });
+    const toolEvent = buildToolFinishEvent(config, {
+      agentId: "alpha",
+      sessionKey: "agent:alpha:main",
+      toolName: "browser_navigate",
+      params: {
+        url: "https://example.com",
+        note: "z".repeat(500)
+      },
+      toolArgsSummary: `browser_navigate ${"a".repeat(400)}`,
+      outputSnippet: "b".repeat(600)
+    });
+
+    expect(dispatchEvent?.context).toEqual({
+      text: "x".repeat(500),
+      preceding: "y".repeat(200)
+    });
+    expect(toolEvent?.context?.text).toBe("b".repeat(500));
+    expect(toolEvent?.context?.toolArgs).toContain("browser_navigate");
+    expect(toolEvent?.context?.toolArgs).toHaveLength(300);
   });
 
   it("captures session resumes as distinct event types", () => {

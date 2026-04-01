@@ -166,6 +166,8 @@ async function executeRpc(engine: SherpaEngine, method: string, params: Record<s
       return engine.workflowState(String(params.caseId ?? ""), typeof params.maxOrder === "number" ? params.maxOrder : undefined);
     case "workflowNext":
       return engine.workflowNext(String(params.caseId ?? ""), typeof params.limit === "number" ? params.limit : undefined);
+    case "workflowSignals":
+      return engine.workflowSignals(String(params.caseId ?? ""), typeof params.limit === "number" ? params.limit : undefined);
     case "workflowRisks":
       return engine.workflowRisks(String(params.caseId ?? ""), typeof params.limit === "number" ? params.limit : undefined);
     case "workflowRecall":
@@ -289,6 +291,16 @@ program
   .action(async (options, command) => {
     const engine = createEngine(command);
     printJson(await engine.workflowNext(options.caseId, parseInteger(options.limit, "--limit")));
+  });
+
+program
+  .command("workflow-signals")
+  .description("Show raw behavioral signals for a case")
+  .requiredOption("--case-id <caseId>", "Case identifier")
+  .option("--limit <n>", "Maximum number of signals", "5")
+  .action(async (options, command) => {
+    const engine = createEngine(command);
+    printJson(await engine.workflowSignals(options.caseId, parseInteger(options.limit, "--limit")));
   });
 
 program

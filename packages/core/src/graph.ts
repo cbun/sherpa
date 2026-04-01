@@ -1,5 +1,17 @@
 import type { SherpaEvent } from "./types.js";
 
+function classifyUserResponse(event: SherpaEvent) {
+  if (event.actor !== "user") {
+    return null;
+  }
+
+  if (event.type.startsWith("message.user.")) {
+    return event.type.slice("message.user.".length);
+  }
+
+  return event.type;
+}
+
 export function stateKeyFromEvents(eventTypes: string[]) {
   return eventTypes.join(" -> ");
 }
@@ -83,6 +95,7 @@ export function buildDerivedRows(events: SherpaEvent[], maxOrder: number) {
         minDurationMs: number | null;
         maxDurationMs: number | null;
         lastSeenAt: string;
+        responseDist: Record<string, number>;
       }
   >();
 
@@ -135,7 +148,8 @@ export function buildDerivedRows(events: SherpaEvent[], maxOrder: number) {
           totalDurationMs: 0,
           minDurationMs: null,
           maxDurationMs: null,
-          lastSeenAt: nextEvent.ts
+          lastSeenAt: nextEvent.ts,
+          responseDist: {}
         };
         const currentEvent = ordered[index];
 
@@ -165,6 +179,16 @@ export function buildDerivedRows(events: SherpaEvent[], maxOrder: number) {
           current.terminalFailureCount += 1;
         } else {
           current.terminalUnknownCount += 1;
+        }
+
+        for (let futureIndex = index + 2; futureIndex < ordered.length; futureIndex += 1) {
+          const userResponse = classifyUserResponse(ordered[futureIndex]!);
+          if (!userResponse) {
+            continue;
+          }
+
+          current.responseDist[userResponse] = (current.responseDist[userResponse] ?? 0) + 1;
+          break;
         }
 
         edgeMap.set(key, current);

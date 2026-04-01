@@ -3,6 +3,8 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import {
   type AnalyticsReportOptions,
   type AnalyticsReportResult,
+  type ConsolidateOptions,
+  type ConsolidationResult,
   SherpaEngine,
   type DoctorResult,
   type ExportResult,
@@ -40,6 +42,7 @@ export interface SherpaBackend {
   workflowRecall(caseId: string, mode?: WorkflowRecallMode, limit?: number): Promise<WorkflowRecallResult>;
   collectMetrics(): Promise<SherpaMetrics>;
   trackAdvisoryInjection(): Promise<void>;
+  consolidate(options: ConsolidateOptions): Promise<ConsolidationResult>;
 }
 
 export interface SherpaPluginRuntime {
@@ -60,6 +63,10 @@ class InProcessSherpaBackend implements SherpaBackend {
 
   async trackAdvisoryInjection() {
     await this.engine.trackAdvisoryInjection();
+  }
+
+  consolidate(options: ConsolidateOptions) {
+    return this.engine.consolidate(options);
   }
 
   ingest(event: SherpaEventInput) {
@@ -303,6 +310,10 @@ export class CliSherpaBackend implements SherpaBackend {
   async trackAdvisoryInjection() {
     this._advisoryCount++;
   }
+
+  async consolidate(_options: ConsolidateOptions): Promise<ConsolidationResult> {
+    throw new Error("Consolidation is not supported via CLI transport. Use embedded or HTTP transport, or run 'sherpa consolidate' directly.");
+  }
 }
 
 export function buildCliSharedArgs(resolved: ResolvedSherpaPluginConfig) {
@@ -439,6 +450,10 @@ export class HttpSherpaBackend implements SherpaBackend {
 
   async trackAdvisoryInjection() {
     await this.call<void>("trackAdvisoryInjection");
+  }
+
+  async consolidate(_options: ConsolidateOptions): Promise<ConsolidationResult> {
+    throw new Error("Consolidation is not supported via HTTP transport. Use embedded transport or run 'sherpa consolidate' directly.");
   }
 }
 

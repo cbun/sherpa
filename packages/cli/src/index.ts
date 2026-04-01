@@ -606,7 +606,7 @@ program
     if (options.apiKey) overrides.apiKey = options.apiKey;
     if (options.baseUrl) overrides.baseUrl = options.baseUrl;
 
-    const { classify, model } = createClassifier(
+    const { classify, model } = await createClassifier(
       Object.keys(overrides).length > 0 ? overrides : undefined
     );
 

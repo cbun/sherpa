@@ -1,8 +1,12 @@
+import fs from "node:fs/promises";
+import path from "node:path";
+
 import type { ConsolidationBatch, EventEnrichment } from "@sherpa/core";
 import { CONSOLIDATION_SYSTEM_PROMPT } from "@sherpa/core";
 
 // ---------------------------------------------------------------------------
 // LLM classification via OpenAI-compatible API
+// Auto-detects from: explicit overrides → OpenClaw config → env vars
 // ---------------------------------------------------------------------------
 
 export interface LlmConfig {
@@ -11,28 +15,75 @@ export interface LlmConfig {
   model?: string;
 }
 
-function resolveConfig(): LlmConfig {
-  // Try OpenAI first, then Anthropic
-  const openaiKey = process.env.OPENAI_API_KEY;
-  if (openaiKey) {
-    return {
-      apiKey: openaiKey,
-      baseUrl: process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1",
-      model: process.env.SHERPA_CONSOLIDATION_MODEL ?? "gpt-4o-mini"
-    };
-  }
+interface OpenClawProviderEntry {
+  apiKey?: string;
+}
 
-  const anthropicKey = process.env.ANTHROPIC_API_KEY;
-  if (anthropicKey) {
-    return {
-      apiKey: anthropicKey,
-      baseUrl: "https://api.anthropic.com/v1",
-      model: process.env.SHERPA_CONSOLIDATION_MODEL ?? "claude-haiku-3-5"
-    };
+interface OpenClawJsonConfig {
+  providers?: Record<string, OpenClawProviderEntry>;
+}
+
+async function tryReadOpenClawConfig(): Promise<OpenClawJsonConfig | null> {
+  const candidates = [
+    process.env.OPENCLAW_CONFIG,
+    path.join(process.env.HOME ?? "~", ".openclaw", "openclaw.json"),
+    "openclaw.json"
+  ].filter(Boolean) as string[];
+
+  for (const configPath of candidates) {
+    try {
+      const content = await fs.readFile(configPath, "utf8");
+      return JSON.parse(content) as OpenClawJsonConfig;
+    } catch {
+      // ignore
+    }
+  }
+  return null;
+}
+
+function keyFromOpenClawConfig(
+  config: OpenClawJsonConfig | null,
+  provider: string
+): string | undefined {
+  if (!config?.providers) return undefined;
+  // Try exact match, then common aliases
+  const entry = config.providers[provider];
+  return entry?.apiKey;
+}
+
+async function resolveConfig(): Promise<LlmConfig> {
+  const ocConfig = await tryReadOpenClawConfig();
+
+  // Priority: env vars → OpenClaw config (cheap models first)
+  const providers: Array<{ provider: string; envKey: string; baseUrl: string; defaultModel: string }> = [
+    { provider: "anthropic", envKey: "ANTHROPIC_API_KEY", baseUrl: "https://api.anthropic.com/v1", defaultModel: "claude-haiku-3-5" },
+    { provider: "openai", envKey: "OPENAI_API_KEY", baseUrl: "https://api.openai.com/v1", defaultModel: "gpt-4o-mini" }
+  ];
+
+  for (const p of providers) {
+    // Check env first
+    const envVal = process.env[p.envKey];
+    if (envVal) {
+      return {
+        apiKey: envVal,
+        baseUrl: p.provider === "openai" ? (process.env.OPENAI_BASE_URL ?? p.baseUrl) : p.baseUrl,
+        model: process.env.SHERPA_CONSOLIDATION_MODEL ?? p.defaultModel
+      };
+    }
+
+    // Check OpenClaw config
+    const ocKey = keyFromOpenClawConfig(ocConfig, p.provider);
+    if (ocKey) {
+      return {
+        apiKey: ocKey,
+        baseUrl: p.baseUrl,
+        model: process.env.SHERPA_CONSOLIDATION_MODEL ?? p.defaultModel
+      };
+    }
   }
 
   throw new Error(
-    "No LLM API key found. Set OPENAI_API_KEY or ANTHROPIC_API_KEY environment variable."
+    "No LLM API key found. Set OPENAI_API_KEY or ANTHROPIC_API_KEY, or configure a provider in openclaw.json."
   );
 }
 
@@ -126,8 +177,9 @@ async function callAnthropic(
   return parsed.enrichments;
 }
 
-export function createClassifier(overrides?: Partial<LlmConfig>) {
-  const config = { ...resolveConfig(), ...overrides };
+export async function createClassifier(overrides?: Partial<LlmConfig>) {
+  const resolved = await resolveConfig();
+  const config = { ...resolved, ...overrides };
   const isAnthropic = config.baseUrl?.includes("anthropic.com");
 
   return {

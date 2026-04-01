@@ -814,6 +814,54 @@ export default definePluginEntry({
 
     api.registerTool(
       {
+        name: "workflow_consolidate",
+        label: "Workflow Consolidate",
+        description: "Run sleep-cycle consolidation: LLM-classify unconsolidated events, enrich types, and rebuild the graph with a richer taxonomy",
+        parameters: Type.Object({
+          agentId: Type.Optional(Type.String()),
+          batchSize: Type.Optional(Type.Number({ minimum: 1, description: "Events per LLM call (default: 50)" })),
+          dryRun: Type.Optional(Type.Boolean({ description: "Preview enrichments without writing" })),
+          reclassify: Type.Optional(Type.Boolean({ description: "Re-process already-consolidated events" })),
+          model: Type.Optional(Type.String({ description: "Override LLM model" })),
+          provider: Type.Optional(Type.String({ description: "Override LLM provider" }))
+        }),
+        async execute(_id, params) {
+          try {
+            const runtime = resolveRuntime(pluginConfig, params);
+            await daemonSupervisor.ensureReady(runtime.resolved);
+            const engine = runtime.backend;
+
+            const { resolveOpenClawLlmConfig, createOpenClawClassifier } = await import("./llm-classify.js");
+
+            const llmConfig = await resolveOpenClawLlmConfig({
+              modelAuth: api.runtime?.modelAuth as import("./llm-classify.js").ModelAuthRuntime | undefined,
+              agentDefaults: api.runtime?.agent?.defaults as import("./llm-classify.js").AgentDefaults | undefined,
+              config: api.config,
+              preferredModel: params.model,
+              preferredProvider: params.provider
+            });
+
+            const classify = createOpenClawClassifier(llmConfig);
+
+            const result = await engine.consolidate({
+              classify,
+              model: `${llmConfig.provider}/${llmConfig.model}`,
+              batchSize: params.batchSize,
+              dryRun: params.dryRun,
+              reclassify: params.reclassify
+            });
+
+            return jsonResult(result);
+          } catch (error) {
+            return unavailableResult(error);
+          }
+        }
+      },
+      { optional: true }
+    );
+
+    api.registerTool(
+      {
         name: "workflow_ingest_event",
         label: "Workflow Ingest Event",
         description: "Append a canonical event into Sherpa's ledger and rebuild the graph",

@@ -586,6 +586,47 @@ program
     printJson(report);
   });
 
+program
+.command("consolidate")
+  .description("Run sleep-cycle consolidation: LLM-classify unconsolidated events and rebuild the graph")
+  .option("--batch-size <n>", "Events per LLM call", "50")
+  .option("--dry-run", "Preview enrichments without writing")
+  .option("--reclassify", "Re-process already-consolidated events")
+  .option("--no-rebuild", "Skip rebuild after consolidation")
+  .option("--model <name>", "Override LLM model name")
+  .option("--api-key <key>", "Override API key")
+  .option("--base-url <url>", "Override API base URL")
+  .action(async (options, command) => {
+    const { createClassifier } = await import("./llm-classify.js");
+
+    const engine = createEngine(command);
+
+    const overrides: Record<string, string> = {};
+    if (options.model) overrides.model = options.model;
+    if (options.apiKey) overrides.apiKey = options.apiKey;
+    if (options.baseUrl) overrides.baseUrl = options.baseUrl;
+
+    const { classify, model } = createClassifier(
+      Object.keys(overrides).length > 0 ? overrides : undefined
+    );
+
+    process.stderr.write(`Consolidating with model: ${model}\n`);
+
+    const result = await engine.consolidate({
+      classify,
+      model,
+      batchSize: parseInteger(options.batchSize, "--batch-size"),
+      dryRun: Boolean(options.dryRun),
+      reclassify: Boolean(options.reclassify),
+      rebuild: options.rebuild !== false,
+      onProgress: (processed, total) => {
+        process.stderr.write(`  ${processed}/${total} events processed...\n`);
+      }
+    });
+
+    printJson(result);
+  });
+
 program.parseAsync(process.argv).catch((error: unknown) => {
   const message = error instanceof Error ? error.message : "Unknown error";
   process.stderr.write(`${message}\n`);

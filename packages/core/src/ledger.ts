@@ -43,6 +43,34 @@ export async function appendEvents(eventsDir: string, eventInputs: SherpaEventIn
   return events;
 }
 
+export async function rewriteLedger(eventsDir: string, events: SherpaEvent[]): Promise<void> {
+  await ensureDir(eventsDir);
+
+  // Group events by date shard
+  const shardLines = new Map<string, string[]>();
+
+  for (const event of events) {
+    const dateShard = `${event.ts.slice(0, 10)}.jsonl`;
+    const lines = shardLines.get(dateShard) ?? [];
+    lines.push(`${JSON.stringify(event)}\n`);
+    shardLines.set(dateShard, lines);
+  }
+
+  // Remove existing shard files, then write new ones
+  const entries = await fs.readdir(eventsDir, { withFileTypes: true });
+  const existingShards = entries
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".jsonl"))
+    .map((entry) => entry.name);
+
+  for (const shard of existingShards) {
+    await fs.unlink(path.join(eventsDir, shard));
+  }
+
+  for (const [dateShard, lines] of shardLines) {
+    await fs.writeFile(path.join(eventsDir, dateShard), lines.join(""), "utf8");
+  }
+}
+
 export async function readLedger(eventsDir: string): Promise<SherpaEvent[]> {
   try {
     const entries = await fs.readdir(eventsDir, { withFileTypes: true });

@@ -2,7 +2,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
 
-import { appendEvent, appendEvents, ensureDir, readLedger } from "./ledger.js";
+import { appendEvent, appendEvents, ensureDir, readLedger, rewriteLedger } from "./ledger.js";
+import { consolidateEvents, type ConsolidateOptions, type ConsolidationResult } from "./consolidate.js";
 import { buildDerivedRows, stateKeyFromEvents } from "./graph.js";
 import { resolveSherpaPaths } from "./paths.js";
 import {
@@ -1334,6 +1335,22 @@ export class SherpaEngine {
       caseCount: status.cases,
       fromExportedAt
     };
+  }
+
+  async consolidate(options: ConsolidateOptions): Promise<ConsolidationResult> {
+    await this.init();
+    const events = await readLedger(this.paths.eventsDir);
+
+    const { events: enrichedEvents, result } = await consolidateEvents(events, options);
+
+    if (!options.dryRun && result.enriched > 0) {
+      await rewriteLedger(this.paths.eventsDir, enrichedEvents);
+      if (options.rebuild !== false) {
+        await this.rebuild();
+      }
+    }
+
+    return result;
   }
 
   async gc(): Promise<GcResult> {

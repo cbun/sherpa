@@ -9,6 +9,7 @@ import { Command, type Command as CommandInstance } from "commander";
 import { assertValidationSuiteThresholds, validateSuite } from "./validate-suite.js";
 import { assertTaxonomyThresholds } from "./taxonomy.js";
 import { assertValidationThresholds, validateDatasetFile } from "./validate.js";
+import { loadSessions, runSimulation } from "./simulate.js";
 
 function defaultRoot() {
   return path.join(process.cwd(), ".sherpa");
@@ -527,6 +528,61 @@ program
         ? { maxFailingDatasets: parseInteger(options.maxFailingDatasets, "--max-failing-datasets") }
         : {})
     });
+    printJson(report);
+  });
+
+program
+  .command("simulate")
+  .description("Replay OpenClaw session logs through Sherpa's capture → engine → advisory pipeline")
+  .option("--input <path>", "Single .jsonl session file to replay")
+  .option("--dir <path>", "Directory of .jsonl files (cumulative replay)")
+  .option(
+    "--sessions-dir <path>",
+    "Alias for --dir; defaults to ~/.openclaw/agents/main/sessions/"
+  )
+  .option("--max-sessions <n>", "Limit number of sessions to replay")
+  .option("--rebuild-every <n>", "Rebuild frequency in events", "50")
+  .option("--advisory-threshold <f>", "Advisory confidence threshold", "0.75")
+  .option("--verbose", "Print step-by-step events to stderr")
+  .action(async (options, command) => {
+    const dir =
+      options.dir ??
+      options.sessionsDir ??
+      (options.input
+        ? undefined
+        : path.join(
+            process.env.HOME ?? "~",
+            ".openclaw/agents/main/sessions"
+          ));
+
+    const sessions = await loadSessions({
+      input: options.input,
+      dir,
+      maxSessions: options.maxSessions
+        ? parseInteger(options.maxSessions, "--max-sessions")
+        : undefined
+    });
+
+    if (sessions.length === 0) {
+      process.stderr.write("No sessions found to simulate.\n");
+      process.exitCode = 1;
+      return;
+    }
+
+    process.stderr.write(
+      `Simulating ${sessions.length} session(s), ${sessions.reduce(
+        (sum, s) => sum + s.events.length,
+        0
+      )} raw events...\n`
+    );
+
+    const report = await runSimulation(sessions, {
+      rebuildEvery: parseInteger(options.rebuildEvery, "--rebuild-every"),
+      advisoryThreshold: parseFloat(options.advisoryThreshold),
+      verbose: Boolean(options.verbose),
+      rootParent: resolveRoot(command)
+    });
+
     printJson(report);
   });
 

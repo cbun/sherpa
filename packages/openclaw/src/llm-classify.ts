@@ -56,34 +56,32 @@ export async function resolveOpenClawLlmConfig(opts: {
     }
   }
 
-  // 2. Try cheap models for classification (Haiku/Mini class)
-  const cheapModels: Array<{ provider: string; model: string }> = [
-    { provider: "anthropic", model: "claude-haiku-3-5" },
-    { provider: "openai", model: "gpt-4o-mini" },
-    { provider: "google", model: "gemini-2.0-flash" }
-  ];
-
-  for (const candidate of cheapModels) {
-    const key = await resolveKey(modelAuth, candidate.provider, config);
-    if (key) {
-      return {
-        apiKey: key,
-        baseUrl: baseUrlForProvider(candidate.provider),
-        model: candidate.model,
-        provider: candidate.provider
-      };
+  // 2. Respect OpenClaw agent defaults — use the configured provider, pick its cheap model
+  if (agentDefaults) {
+    const defaultProvider = extractProvider(agentDefaults.model) ?? agentDefaults.provider;
+    if (defaultProvider) {
+      const key = await resolveKey(modelAuth, defaultProvider, config);
+      if (key) {
+        return {
+          apiKey: key,
+          baseUrl: baseUrlForProvider(defaultProvider),
+          model: cheapModelForProvider(defaultProvider),
+          provider: defaultProvider
+        };
+      }
     }
   }
 
-  // 3. Fall back to agent defaults
-  if (agentDefaults) {
-    const key = await resolveKey(modelAuth, agentDefaults.provider, config);
+  // 3. Probe available providers (for setups without explicit defaults)
+  const providers = ["anthropic", "openai", "google"];
+  for (const provider of providers) {
+    const key = await resolveKey(modelAuth, provider, config);
     if (key) {
       return {
         apiKey: key,
-        baseUrl: baseUrlForProvider(agentDefaults.provider),
-        model: agentDefaults.model,
-        provider: agentDefaults.provider
+        baseUrl: baseUrlForProvider(provider),
+        model: cheapModelForProvider(provider),
+        provider
       };
     }
   }
@@ -125,6 +123,26 @@ async function resolveKey(
     return result?.apiKey ?? null;
   } catch {
     return null;
+  }
+}
+
+/** Extract provider prefix from a "provider/model" string */
+function extractProvider(model: string): string | null {
+  const slash = model.indexOf("/");
+  return slash > 0 ? model.slice(0, slash) : null;
+}
+
+/** Pick the cheapest classification-grade model for a provider */
+function cheapModelForProvider(provider: string): string {
+  switch (provider) {
+    case "anthropic":
+      return "claude-haiku-3-5";
+    case "openai":
+      return "gpt-4o-mini";
+    case "google":
+      return "gemini-2.0-flash";
+    default:
+      return "gpt-4o-mini"; // safe fallback for OpenAI-compatible
   }
 }
 

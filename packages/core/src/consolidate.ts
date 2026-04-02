@@ -83,6 +83,8 @@ export interface ConsolidateOptions {
   model?: string;
   /** Progress callback */
   onProgress?: (processed: number, total: number) => void;
+  /** Number of batches to process concurrently (default: 4) */
+  concurrency?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -242,32 +244,53 @@ export async function consolidateEvents(
   let skipped = 0;
   let errors = 0;
 
-  // Process in batches
+  // Process in batches with concurrency
+  const concurrency = options.concurrency ?? 4;
+  const batches: Array<{ events: SherpaEvent[]; batch: ConsolidationBatch; startIdx: number }> = [];
   for (let i = 0; i < targets.length; i += batchSize) {
     const batchEvents = targets.slice(i, i + batchSize);
-    const batch = buildBatch(batchEvents);
+    batches.push({ events: batchEvents, batch: buildBatch(batchEvents), startIdx: i });
+  }
 
-    try {
-      const enrichments = await options.classify(batch);
-      const enrichmentMap = new Map(enrichments.map((e) => [e.eventId, e]));
+  let processed = 0;
+  for (let i = 0; i < batches.length; i += concurrency) {
+    const chunk = batches.slice(i, i + concurrency);
+    const results = await Promise.allSettled(
+      chunk.map(async ({ events: batchEvents, batch }) => {
+        const enrichments = await options.classify(batch);
+        return { batchEvents, enrichments };
+      })
+    );
 
-      for (const event of batchEvents) {
-        const enrichment = enrichmentMap.get(event.eventId);
-        if (enrichment && enrichment.confidence > 0) {
-          const enrichedEvent = applyEnrichment(event, enrichment, model);
-          if (!options.dryRun) {
-            eventMap.set(event.eventId, enrichedEvent);
+    for (const result of results) {
+      if (result.status === "fulfilled") {
+        const { batchEvents, enrichments } = result.value;
+        const enrichmentMap = new Map(enrichments.map((e) => [e.eventId, e]));
+        for (const event of batchEvents) {
+          const enrichment = enrichmentMap.get(event.eventId);
+          if (enrichment && enrichment.confidence > 0) {
+            const enrichedEvent = applyEnrichment(event, enrichment, model);
+            if (!options.dryRun) {
+              eventMap.set(event.eventId, enrichedEvent);
+            }
+            enriched++;
+          } else {
+            skipped++;
           }
-          enriched++;
-        } else {
-          skipped++;
+        }
+        processed += batchEvents.length;
+      } else {
+        const failedIdx = results.indexOf(result);
+        const failedBatch = chunk[failedIdx]!;
+        errors += failedBatch.events.length;
+        processed += failedBatch.events.length;
+        if (process.env.SHERPA_DEBUG) {
+          process.stderr.write(`Consolidation batch error: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}\n`);
         }
       }
-    } catch {
-      errors += batchEvents.length;
     }
 
-    options.onProgress?.(Math.min(i + batchSize, targets.length), targets.length);
+    options.onProgress?.(Math.min(processed, targets.length), targets.length);
   }
 
   return {

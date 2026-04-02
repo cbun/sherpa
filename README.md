@@ -4,11 +4,11 @@ Sherpa is a local-first procedural memory layer for [OpenClaw](https://github.co
 
 It watches the events an OpenClaw agent already produces — sessions starting, tools firing, tasks completing — and learns the *shape* of recurring work. Not facts, not conversation history: workflow structure.
 
-After enough observations, Sherpa can tell the agent what usually comes next, which branches tend to fail, and how similar past tasks resolved. It does this without any remote service, extra LLM calls, or changes to how you use OpenClaw.
+After enough observations, Sherpa can tell the agent what usually comes next, which branches tend to stall or underperform, and how similar past tasks resolved. It does this without any remote service, extra LLM calls, or changes to how you use OpenClaw.
 
 ## Abstract
 
-Contemporary LLM-based agent systems maintain two dominant forms of memory: **semantic memory** (embedding-based retrieval over stored facts and documents) and **episodic memory** (raw or summarized conversation history). Both degrade under the operational conditions that characterize long-running agentic workflows — context window saturation, lossy compaction, session discontinuity, and cross-session state leakage. Critically, neither representation captures the **procedural regularities** that emerge when an agent repeatedly executes structurally similar tasks: the typical ordering of steps, the branching points where failures concentrate, or the temporal dynamics of successful versus unsuccessful trajectories.
+Contemporary LLM-based agent systems maintain two dominant forms of memory: **semantic memory** (embedding-based retrieval over stored facts and documents) and **episodic memory** (raw or summarized conversation history). Both degrade under the operational conditions that characterize long-running agentic workflows — context window saturation, lossy compaction, session discontinuity, and cross-session state leakage. Critically, neither representation captures the **procedural regularities** that emerge when an agent repeatedly executes structurally similar tasks: the typical ordering of steps, the branching points where outcomes diverge, or the temporal dynamics of successful versus unsuccessful trajectories.
 
 Sherpa addresses this gap by introducing a **procedural memory layer** that models agent workflow structure as a **variable-order Markov chain** over typed event sequences. Events are captured from the agent's native lifecycle (session boundaries, tool invocations, task demarcations, message dispatch) and stored in an append-only local ledger. A derived **n-gram transition graph** — conceptually related to de Bruijn graphs in sequence analysis — encodes multi-order state transitions with per-edge provenance: observation support, transition-level and terminal-case outcome distributions, and temporal statistics.
 
@@ -18,7 +18,7 @@ The principal contributions are:
 
 2. **Variable-order suffix matching with graceful degradation.** State resolution attempts the highest-order context match first and falls back to shorter suffixes when support is insufficient, analogous to variable-order Markov models (VOMMs) and Prediction by Partial Matching (PPM) in data compression. This yields high-specificity predictions when data is abundant and bounded-quality predictions when it is not, without requiring explicit order selection.
 
-3. **Outcome-aware transition scoring.** Branch ranking incorporates not only transition probability but also terminal case outcomes (eventual success/failure rates for cases that passed through each edge), yielding a composite score that balances frequency, quality, and confidence. Risk detection uses relative risk ratios against per-state baselines to surface branches with elevated failure or stall rates.
+3. **Outcome-aware transition scoring.** Branch ranking incorporates not only transition probability but also terminal case outcomes (eventual success/failure rates for cases that passed through each edge), yielding a composite score that balances frequency, quality, and confidence. Outcome analysis uses relative outcome ratios against per-state baselines to surface branches with elevated failure or stall rates.
 
 4. **Zero-inference advisory injection.** Procedural guidance is generated deterministically from graph statistics and injected into the agent's prompt context without additional LLM calls, preserving the latency and cost profile of the underlying agent system.
 
@@ -32,7 +32,7 @@ Agent sessions have a specific memory problem that RAG and conversation history 
 
 As sessions grow, context windows fill up. Compaction kicks in. Sessions restart. Summaries drift. The agent loses its sense of *where it is in the work* — not what it knows, but what step it's on and what tends to follow.
 
-Semantic memory answers "what do I know about X?" Sherpa answers "what usually happens next from here, and which paths tend to go badly?"
+Semantic memory answers "what do I know about X?" Sherpa answers "what usually happens next from here, and which paths tend to underperform?"
 
 These are different questions, and they need different data structures.
 
@@ -60,7 +60,7 @@ During `rebuild()`, Sherpa reads the full event ledger and computes:
 
 2. **Cases** — Per-case aggregates: event count, time span, terminal outcome inferred from the final events.
 
-3. **Materialized tables** — Workflow aggregates, risk metrics, success metrics, and config version history, all derived from the edges and cases.
+3. **Materialized tables** — Workflow aggregates, outcome metrics, success metrics, and config version history, all derived from the edges and cases.
 
 The key insight is **de Bruijn-style suffix fallback**. When querying state, Sherpa tries the longest matching suffix first (order = `defaultOrder`). If support is below `minSupport`, it drops to shorter suffixes until it finds a match or bottoms out at `minOrder`. This gives high-context predictions when data is rich and graceful degradation when it's sparse.
 
@@ -100,15 +100,15 @@ where:
 
 Candidates are sorted by score (tiebreak: probability → success rate → support) and returned with full provenance: probability, support count, success/failure rates, mean time to next event, matched order, and a human-readable reason string.
 
-### Risk Detection (`workflowRisks`)
+### Outcome Analysis (`workflowOutcomes`)
 
 For each outgoing branch, Sherpa computes:
 
 - **Failure rate** — what fraction of observations through this branch ended in a failed case
 - **Stall rate** — what fraction ended in an unknown/abandoned outcome
-- **Relative risk** — branch rate divided by the baseline rate across all branches from this state
+- **Relative rate** — branch rate divided by the baseline rate across all branches from this state
 
-Branches where failure or stall rate exceeds the baseline are flagged as risks. Each risk includes a confidence score (weighted blend of support confidence and order confidence), a composite score (`probability × relativeRisk × confidence`), and a suggested intervention (heuristic-based: attachment checks, approval prerequisites, or generic checkpoint advice).
+Branches where failure or stall rate exceeds the baseline are flagged for attention. Each flagged branch includes a confidence score (weighted blend of support confidence and order confidence), a composite score (`probability × relativeRate × confidence`), and a suggested intervention (heuristic-based: attachment checks, approval prerequisites, or generic checkpoint advice).
 
 ### Recall (`workflowRecall`)
 
@@ -129,13 +129,13 @@ Supports filtering by outcome mode: `successful`, `failed`, or `any`. Returns th
 
 When enabled, Sherpa injects procedural guidance into the agent's context before each prompt via the `before_prompt_build` lifecycle hook:
 
-1. Query `workflowState`, `workflowNext`, and `workflowRisks` for the current case
+1. Query `workflowState`, `workflowNext`, and `workflowOutcomes` for the current case
 2. Pass results to `buildSherpaAdvisory()` which formats a bounded text block
 3. Return as `{ prependContext: advisory }` for OpenClaw to inject
 
 **Gating:**
 - Confidence must exceed `injectThreshold` (default 0.75)
-- Must have at least one candidate or risk to report
+- Must have at least one candidate or flagged outcome to report
 - 2-minute per-case cooldown prevents spamming every turn
 - Scope rules control which chats receive advisories (direct only by default)
 - Output capped at `maxChars` (default 900)
@@ -153,8 +153,8 @@ Confidence: 0.82
 Likely next:
 1. session.ended (67%)
 2. tool.started (25%)
-Top risk:
-- message.received branch has high stall risk
+Outcome note:
+- message.received branch has elevated stall rate
 Suggested action:
 - set a checkpoint and fallback path before entering message.received
 ```
@@ -186,7 +186,7 @@ The engine (`engine.ts`) owns all stateful operations:
   - `state_edges` — the n-gram transition model (primary key: order + state_key + next_event)
   - `metadata` — key-value store for engine state (rebuild count, config, counters)
   - `workflows` — materialized workflow-level aggregates (by label)
-  - `risk_metrics` — materialized failure/stall risk scores per state+branch
+  - `risk_metrics` — materialized failure/stall outcome scores per state+branch
   - `success_metrics` — materialized success/failure rates per state+branch
   - `config_versions` — tracks engine configuration changes over time
 
@@ -231,7 +231,7 @@ All three implement the same `SherpaBackend` interface.
 | `workflow_status` | Health check: event/case counts, freshness, config |
 | `workflow_state` | Current state for a case (suffix, confidence, matched order) |
 | `workflow_next` | Ranked next-step candidates with scoring breakdown |
-| `workflow_risks` | Failure/stall risk analysis with interventions |
+| `workflow_outcomes` | Failure/stall outcome analysis with interventions |
 | `workflow_recall` | Similar past paths filtered by outcome |
 | `workflow_taxonomy` | Event type distribution, drift detection, rare types |
 | `workflow_analytics` | Hot transitions, failure branches, stall branches |
@@ -280,7 +280,7 @@ Direct command-line access to all engine operations:
 ```bash
 sherpa --root ./.sherpa status
 sherpa --root ./.sherpa workflow-next --case-id case-123
-sherpa --root ./.sherpa workflow-risks --case-id case-123
+sherpa --root ./.sherpa workflow-outcomes --case-id case-123
 sherpa --root ./.sherpa workflow-recall --case-id case-123 --mode successful
 sherpa --root ./.sherpa taxonomy-report --recent-days 14
 sherpa --root ./.sherpa analytics-report --limit 10

@@ -6,5 +6,6 @@ export default defineConfig({
   target: "node22",
   dts: true,
   clean: true,
-  external: ["openclaw", "openclaw/plugin-sdk/plugin-entry", "@sinclair/typebox"]
+  external: ["openclaw", "openclaw/plugin-sdk/plugin-entry"],
+  noExternal: ["@sherpa/core", "@sinclair/typebox", "zod"]
 });

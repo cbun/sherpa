@@ -3,6 +3,25 @@
   "name": "Sherpa",
   "description": "Procedural workflow memory for OpenClaw",
   "version": "0.1.0",
+  "activation": {
+    "onStartup": true
+  },
+  "contracts": {
+    "tools": [
+      "workflow_state",
+      "workflow_next",
+      "workflow_risks",
+      "workflow_recall",
+      "workflow_status",
+      "workflow_analytics",
+      "workflow_doctor",
+      "workflow_rebuild",
+      "workflow_export",
+      "workflow_gc",
+      "workflow_taxonomy",
+      "workflow_ingest_event"
+    ]
+  },
   "configSchema": {
     "type": "object",
     "additionalProperties": false,

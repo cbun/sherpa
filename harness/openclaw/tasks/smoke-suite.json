@@ -1,0 +1,16 @@
+{
+  "name": "smoke-suite",
+  "description": "Minimal sandbox suite for exercising OpenClaw capture, projection, storage, and workflow-status export.",
+  "mode": "advisory",
+  "timeoutSeconds": 120,
+  "tasks": [
+    {
+      "id": "read-readme-heading",
+      "message": "Read README.md and reply with only the first heading."
+    },
+    {
+      "id": "summarize-validation-fixtures",
+      "message": "Read fixtures/validation/README.md and summarize the supported validation fixture formats in three bullets."
+    }
+  ]
+}

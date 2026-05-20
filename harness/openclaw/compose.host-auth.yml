@@ -1,0 +1,4 @@
+services:
+  openclaw:
+    volumes:
+      - ${HOME}/.openclaw:/host-openclaw:ro

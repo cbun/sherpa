@@ -1,0 +1,30 @@
+services:
+  openclaw:
+    build:
+      context: ../..
+      dockerfile: harness/openclaw/Dockerfile
+      args:
+        SHERPA_HARNESS_BASE_IMAGE: ${SHERPA_HARNESS_BASE_IMAGE:-ghcr.io/openclaw/openclaw:2026.5.7}
+    image: sherpa-openclaw-harness:local
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENCLAW_HOME: ${OPENCLAW_HOME:-/home/openclaw}
+      OPENCLAW_CONFIG_DIR: ${OPENCLAW_CONFIG_DIR:-/home/openclaw/.openclaw}
+      OPENCLAW_MODEL_PRIMARY: ${OPENCLAW_MODEL_PRIMARY:-openai/gpt-5.4}
+      OPENCLAW_GATEWAY_PORT: ${OPENCLAW_GATEWAY_PORT:-18789}
+      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:-sherpa-harness-token}
+      OPENCLAW_GATEWAY_AUTH_MODE: ${OPENCLAW_GATEWAY_AUTH_MODE:-none}
+      OPENCLAW_COPY_HOST_AUTH: ${OPENCLAW_COPY_HOST_AUTH:-0}
+      OPENCLAW_HOST_CONFIG_PATH: /host-openclaw/openclaw.json
+      SHERPA_HARNESS_AGENT_ID: ${SHERPA_HARNESS_AGENT_ID:-main}
+      SHERPA_HARNESS_MODE: ${SHERPA_HARNESS_MODE:-advisory}
+      SHERPA_ADVISORY_ENABLED: ${SHERPA_ADVISORY_ENABLED:-}
+      SHERPA_ADVISORY_THRESHOLD: ${SHERPA_ADVISORY_THRESHOLD:-0.75}
+    volumes:
+      - openclaw-home:/home/openclaw/.openclaw
+    tty: true
+    stdin_open: true
+
+volumes:
+  openclaw-home:

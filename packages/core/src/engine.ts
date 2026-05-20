@@ -4,8 +4,9 @@ import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
 
 import { appendEvent, appendEvents, ensureDir, readLedger, rewriteLedger } from "./ledger.js";
 import { consolidateEvents, type ConsolidateOptions, type ConsolidationResult } from "./consolidate.js";
-import { buildDerivedRows, stateKeyFromEvents } from "./graph.js";
+import { buildDerivedRows, buildStateVariants, describeStateVariant, stateKeyFromEvents, type StateVariant } from "./graph.js";
 import { resolveSherpaPaths } from "./paths.js";
+import { deriveSequenceProjectionStates } from "./projection.js";
 import {
   getMetadata,
   incrementMetadata,
@@ -32,6 +33,9 @@ import {
   type SherpaEventInput,
   type SherpaMetrics,
   type SherpaOutcome,
+  type SherpaProjectionSource,
+  type SherpaStateStrategy,
+  type WorkflowMatchEvidence,
   type WorkflowNextCandidate,
   type WorkflowNextResult,
   type WorkflowRecallMode,
@@ -59,6 +63,7 @@ type StoredEventRow = {
   outcome: SherpaEvent["outcome"];
   labels_json: string;
   entities_json: string;
+  projection_json: string | null;
   metrics_json: string;
   meta_json: string;
   context: string | null;
@@ -98,6 +103,11 @@ type AnalyticsEdgeRow = {
 };
 
 function deserializeEvent(row: StoredEventRow): SherpaEvent {
+  const projection =
+    row.projection_json === null
+      ? undefined
+      : (JSON.parse(row.projection_json) as SherpaEvent["projection"] | null) ?? undefined;
+
   return {
     eventId: row.event_id,
     schemaVersion: row.schema_version as 1,
@@ -110,6 +120,7 @@ function deserializeEvent(row: StoredEventRow): SherpaEvent {
     outcome: row.outcome,
     labels: JSON.parse(row.labels_json) as string[],
     entities: JSON.parse(row.entities_json) as string[],
+    ...(projection ? { projection } : {}),
     metrics: JSON.parse(row.metrics_json) as Record<string, number>,
     meta: JSON.parse(row.meta_json) as Record<string, unknown>,
     ...(row.context ? { context: JSON.parse(row.context) as SherpaEvent["context"] } : {})
@@ -207,6 +218,58 @@ function riskConfidence(support: number, matchedOrder: number, defaultOrder: num
   const supportConfidence = support / (support + 2);
   const orderConfidence = matchedOrder / Math.max(1, defaultOrder);
   return Number(Math.min(0.99, 0.35 + 0.35 * supportConfidence + 0.3 * orderConfidence).toFixed(2));
+}
+
+function compareVariantCandidates(
+  left: {
+    totalSupport: number;
+    rows: StateEdgeRow[];
+    variant: StateVariant;
+  },
+  right: {
+    totalSupport: number;
+    rows: StateEdgeRow[];
+    variant: StateVariant;
+  }
+) {
+  const leftDominant = left.rows.reduce((max, row) => Math.max(max, Number(row.support)), 0) / Math.max(1, left.totalSupport);
+  const rightDominant =
+    right.rows.reduce((max, row) => Math.max(max, Number(row.support)), 0) / Math.max(1, right.totalSupport);
+  const leftScore = leftDominant * Math.log10(left.totalSupport + 1);
+  const rightScore = rightDominant * Math.log10(right.totalSupport + 1);
+
+  if (rightScore !== leftScore) {
+    return rightScore - leftScore;
+  }
+
+  if (right.totalSupport !== left.totalSupport) {
+    return right.totalSupport - left.totalSupport;
+  }
+
+  if (right.variant.facetFields.length !== left.variant.facetFields.length) {
+    return right.variant.facetFields.length - left.variant.facetFields.length;
+  }
+
+  if (right.variant.specificity !== left.variant.specificity) {
+    return right.variant.specificity - left.variant.specificity;
+  }
+
+  if (right.rows.length !== left.rows.length) {
+    return right.rows.length - left.rows.length;
+  }
+
+  return left.variant.stateKey.localeCompare(right.variant.stateKey);
+}
+
+function buildMatchEvidence(variant: StateVariant, matchedOrder: number): WorkflowMatchEvidence {
+  return {
+    mode: variant.mode,
+    description: describeStateVariant(variant),
+    matchedOrder,
+    facetFields: [...variant.facetFields],
+    state: variant.stateTokens,
+    stateKey: variant.stateKey
+  };
 }
 
 function longestMatchingWindow(currentState: string[], sequence: string[], maxOrder: number) {
@@ -324,6 +387,10 @@ export class SherpaEngine {
   readonly minOrder: number;
   readonly maxOrder: number;
   readonly minSupport: number;
+  readonly stateStrategy: SherpaStateStrategy;
+  readonly requireProjection: boolean;
+  readonly allowRawFallback: boolean;
+  readonly allowedProjectionSources: readonly SherpaProjectionSource[];
   readonly paths: ReturnType<typeof resolveSherpaPaths>;
 
   constructor(options: SherpaEngineOptions) {
@@ -332,7 +399,33 @@ export class SherpaEngine {
     this.minOrder = options.minOrder ?? 1;
     this.maxOrder = options.maxOrder ?? 5;
     this.minSupport = options.minSupport ?? 1;
+    this.stateStrategy = options.stateStrategy ?? "raw";
+    this.requireProjection = options.requireProjection ?? false;
+    this.allowRawFallback = options.allowRawFallback ?? true;
+    this.allowedProjectionSources = options.allowedProjectionSources ?? ["llm", "manual", "imported"];
     this.paths = resolveSherpaPaths(options.rootDir);
+  }
+
+  private assertEventProjection(event: Pick<SherpaEventInput, "type" | "caseId" | "projection">) {
+    if (!this.requireProjection) {
+      return;
+    }
+
+    if (!event.projection) {
+      throw new Error(`Sherpa semantic projection is required for event ${event.type} in case ${event.caseId}`);
+    }
+
+    if (!this.allowedProjectionSources.includes(event.projection.source)) {
+      throw new Error(
+        `Sherpa event ${event.type} in case ${event.caseId} has disallowed projection source ${event.projection.source}`
+      );
+    }
+  }
+
+  private assertProjectionBatch(events: Array<Pick<SherpaEventInput, "type" | "caseId" | "projection">>) {
+    for (const event of events) {
+      this.assertEventProjection(event);
+    }
   }
 
   async init() {
@@ -348,6 +441,7 @@ export class SherpaEngine {
 
   async ingest(eventInput: SherpaEventInput): Promise<SherpaEvent> {
     await this.init();
+    this.assertEventProjection(eventInput);
     const event = await appendEvent(this.paths.eventsDir, eventInput);
     await this.rebuild();
     return event;
@@ -359,6 +453,7 @@ export class SherpaEngine {
     }
 
     await this.init();
+    this.assertProjectionBatch(eventInputs);
     const events = await appendEvents(this.paths.eventsDir, eventInputs);
     await this.rebuild();
     return events;
@@ -367,7 +462,10 @@ export class SherpaEngine {
   async rebuild() {
     await this.init();
     const events = await readLedger(this.paths.eventsDir);
-    const { caseRows, stateEdgeRows } = buildDerivedRows(events, this.maxOrder);
+    this.assertProjectionBatch(events);
+    const { caseRows, stateEdgeRows } = buildDerivedRows(events, this.maxOrder, this.stateStrategy, {
+      includeRawFallback: this.allowRawFallback
+    });
 
     await withGraphStore(this.paths.graphPath, (db) => {
       resetDerivedTables(db);
@@ -444,18 +542,26 @@ export class SherpaEngine {
       // Deprecated in Phase 5: risk_metrics and success_metrics tables remain empty for backward compatibility.
 
       // Record config version
-      const configHash = `${this.defaultOrder}-${this.minOrder}-${this.maxOrder}-${this.minSupport}`;
+      const configHash = `${this.defaultOrder}-${this.minOrder}-${this.maxOrder}-${this.minSupport}-${this.stateStrategy}`;
       insertConfigVersion(db, configHash, JSON.stringify({
         defaultOrder: this.defaultOrder,
         minOrder: this.minOrder,
         maxOrder: this.maxOrder,
-        minSupport: this.minSupport
+        minSupport: this.minSupport,
+        stateStrategy: this.stateStrategy,
+        requireProjection: this.requireProjection,
+        allowRawFallback: this.allowRawFallback,
+        allowedProjectionSources: this.allowedProjectionSources
       }), new Date().toISOString());
 
       setMetadata(db, "defaultOrder", String(this.defaultOrder));
       setMetadata(db, "minOrder", String(this.minOrder));
       setMetadata(db, "maxOrder", String(this.maxOrder));
       setMetadata(db, "minSupport", String(this.minSupport));
+      setMetadata(db, "stateStrategy", this.stateStrategy);
+      setMetadata(db, "requireProjection", String(this.requireProjection));
+      setMetadata(db, "allowRawFallback", String(this.allowRawFallback));
+      setMetadata(db, "allowedProjectionSources", JSON.stringify(this.allowedProjectionSources));
       setMetadata(db, "lastRebuildAt", new Date().toISOString());
       incrementMetadata(db, "rebuildCount");
     });
@@ -499,7 +605,11 @@ export class SherpaEngine {
           defaultOrder: this.defaultOrder,
           minOrder: this.minOrder,
           maxOrder: this.maxOrder,
-          minSupport: this.minSupport
+          minSupport: this.minSupport,
+          stateStrategy: this.stateStrategy,
+          requireProjection: this.requireProjection,
+          allowRawFallback: this.allowRawFallback,
+          allowedProjectionSources: [...this.allowedProjectionSources]
         },
         ledgerPath: this.paths.eventsDir,
         graphPath: this.paths.graphPath
@@ -760,35 +870,81 @@ export class SherpaEngine {
     });
   }
 
-  private readMatchedEdges(db: DatabaseSyncType, state: string[]) {
-    for (let order = Math.min(this.defaultOrder, state.length); order >= this.minOrder; order -= 1) {
-      const currentState = state.slice(-order);
-      const rows = db
-        .prepare(
-          `
-            SELECT next_event, support, success_count, failure_count,
-                   terminal_success_count, terminal_failure_count, terminal_unknown_count,
-                   total_duration_ms, response_dist
-            FROM state_edges
-            WHERE order_n = ? AND state_key = ?
-            ORDER BY support DESC, next_event ASC
-          `
-        )
-        .all(order, stateKeyFromEvents(currentState)) as StateEdgeRow[];
+  private readCaseSequence(db: DatabaseSyncType, caseId: string) {
+    const rows = db
+      .prepare(
+        `
+          SELECT event_id, schema_version, agent_id, case_id, ts, source, type, actor, outcome,
+                 labels_json, entities_json, projection_json, metrics_json, meta_json, context
+          FROM events
+          WHERE case_id = ?
+          ORDER BY ts ASC, event_id ASC
+        `
+      )
+      .all(caseId) as StoredEventRow[];
 
-      if (rows.length > 0) {
+    return rows.map(deserializeEvent);
+  }
+
+  private readMatchedEdges(db: DatabaseSyncType, recentEvents: SherpaEvent[]) {
+    const caseId = recentEvents.at(-1)?.caseId;
+    const caseSequence = caseId ? this.readCaseSequence(db, caseId) : recentEvents;
+    const caseDerivedStates = deriveSequenceProjectionStates(caseSequence);
+
+    for (let order = Math.min(this.defaultOrder, recentEvents.length); order >= this.minOrder; order -= 1) {
+      const currentEvents = recentEvents.slice(-order);
+      const currentDerivedStates = caseDerivedStates.slice(-order);
+      const stateVariants = buildStateVariants(currentEvents, this.stateStrategy, {
+        includeRawFallback: this.allowRawFallback,
+        derivedStates: currentDerivedStates
+      });
+      const candidates: Array<{
+        matchedOrder: number;
+        currentState: string[];
+        matchedState: string[];
+        matchedStateKey: string;
+        variant: StateVariant;
+        rows: StateEdgeRow[];
+        totalSupport: number;
+      }> = [];
+
+      for (const variant of stateVariants) {
+        const rows = db
+          .prepare(
+            `
+              SELECT next_event, support, success_count, failure_count,
+                     terminal_success_count, terminal_failure_count, terminal_unknown_count,
+                     total_duration_ms, response_dist
+              FROM state_edges
+              WHERE order_n = ? AND state_key = ?
+              ORDER BY support DESC, next_event ASC
+            `
+          )
+          .all(order, variant.stateKey) as StateEdgeRow[];
+
+        if (rows.length === 0) {
+          continue;
+        }
+
         const totalSupport = rows.reduce((sum, row) => sum + Number(row.support), 0);
 
         if (totalSupport < this.minSupport) {
           continue;
         }
 
-        return {
+        candidates.push({
           matchedOrder: order,
-          currentState,
+          currentState: currentEvents.map((event) => event.type),
+          matchedState: variant.stateTokens,
+          matchedStateKey: variant.stateKey,
+          variant,
           rows,
           totalSupport
-        };
+        });
+      }
+
+      if (candidates.length > 0) {
+        return candidates.sort(compareVariantCandidates)[0] ?? null;
       }
     }
 
@@ -871,7 +1027,7 @@ export class SherpaEngine {
         .prepare(
           `
             SELECT event_id, schema_version, agent_id, case_id, ts, source, type, actor, outcome,
-                   labels_json, entities_json, metrics_json, meta_json, context
+                   labels_json, entities_json, projection_json, metrics_json, meta_json, context
             FROM events
             WHERE case_id = ?
             ORDER BY ts DESC, event_id DESC
@@ -894,13 +1050,14 @@ export class SherpaEngine {
         ordered
           .flatMap((event) => event.labels)
           .find((label) => label.startsWith("workflow:")) ?? null;
-      const match = this.readMatchedEdges(db, state);
+      const match = this.readMatchedEdges(db, ordered);
       const matchedOrder = match?.matchedOrder ?? state.length;
       const matchedState = match?.currentState ?? state;
-      const matchedStateKey = stateKeyFromEvents(matchedState);
+      const matchedStateKey = match?.matchedStateKey ?? stateKeyFromEvents(matchedState);
       const supportRow = supportQuery.get(matchedState.length, matchedStateKey) as { support: number };
-      const support = Number(supportRow.support ?? 0);
+      const support = match ? match.totalSupport : Number(supportRow.support ?? 0);
       const confidence = confidenceFromSupport(support);
+      const matchedBy = match ? buildMatchEvidence(match.variant, match.matchedOrder) : null;
 
       return {
         caseId,
@@ -909,6 +1066,7 @@ export class SherpaEngine {
         matchedOrder,
         confidence,
         support,
+        matchedBy,
         recentEvents: ordered
       };
     });
@@ -919,9 +1077,10 @@ export class SherpaEngine {
     const state = await this.workflowState(caseId, this.defaultOrder);
 
     return withGraphStore(this.paths.graphPath, (db) => {
-      const match = this.readMatchedEdges(db, state.state);
+      const match = this.readMatchedEdges(db, state.recentEvents);
 
       if (match) {
+        const matchEvidence = buildMatchEvidence(match.variant, match.matchedOrder);
         const candidates: WorkflowNextCandidate[] = match.rows
           .map((row) => {
             const successRate = eventualSuccessRate(row);
@@ -944,7 +1103,7 @@ export class SherpaEngine {
               userResponseDist: parseResponseDist(row.response_dist),
               matchedOrder: match.matchedOrder,
               score,
-              reason: `Matched ${match.matchedOrder}-event suffix with ${row.support} prior observations`
+              reason: `Matched ${match.matchedOrder}-event ${describeStateVariant(match.variant)} with ${row.support} prior observations`
             };
           })
           .sort((left, right) => {
@@ -967,6 +1126,7 @@ export class SherpaEngine {
         return {
           caseId,
           state: match.currentState,
+          match: matchEvidence,
           candidates
         };
       }
@@ -974,6 +1134,7 @@ export class SherpaEngine {
       return {
         caseId,
         state: state.state,
+        match: null,
         candidates: []
       };
     });
@@ -984,7 +1145,7 @@ export class SherpaEngine {
     const state = await this.workflowState(caseId, this.defaultOrder);
 
     return withGraphStore(this.paths.graphPath, (db) => {
-      const match = this.readMatchedEdges(db, state.state);
+      const match = this.readMatchedEdges(db, state.recentEvents);
 
       if (!match) {
         return {
@@ -1283,7 +1444,7 @@ export class SherpaEngine {
 
       const events = (
         db
-          .prepare("SELECT event_id, schema_version, agent_id, case_id, ts, source, type, actor, outcome, labels_json, entities_json, metrics_json, meta_json, context FROM events ORDER BY ts ASC, event_id ASC")
+          .prepare("SELECT event_id, schema_version, agent_id, case_id, ts, source, type, actor, outcome, labels_json, entities_json, projection_json, metrics_json, meta_json, context FROM events ORDER BY ts ASC, event_id ASC")
           .all() as StoredEventRow[]
       ).map(deserializeEvent);
 

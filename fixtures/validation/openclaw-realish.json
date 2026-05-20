@@ -1,0 +1,287 @@
+{
+  "name": "openclaw-realish",
+  "description": "Starter real-world-like workflow traces for incident response, code repair, docs work, and research flows.",
+  "schemaVersion": 1,
+  "ontologyVersion": "draft-v1",
+  "notes": [
+    "Starter real-world-like traces for schema and evaluation development.",
+    "These traces are curated examples intended to exercise richer validation metadata."
+  ],
+  "cases": [
+    {
+      "caseId": "incident-config-recovery-1",
+      "sourceTrace": "openclaw-dogfood",
+      "labels": ["workflow:incident-response", "domain:payments"],
+      "annotations": {
+        "workflowClass": "incident-response",
+        "taskBoundaries": [
+          {
+            "startStep": 1,
+            "endStep": 8,
+            "title": "Stripe webhook failures after deploy",
+            "reason": "auto-first-message"
+          }
+        ],
+        "blockers": [
+          {
+            "step": 5,
+            "type": "config-drift",
+            "detail": "Webhook secret mismatch between deployed env and secret manager",
+            "resolved": true
+          }
+        ],
+        "expectations": {
+          "terminalOutcome": "success",
+          "nextByStep": [
+            {
+              "step": 3,
+              "expectedNext": ["env.diff.checked", "secret.rotation.confirmed"],
+              "expectedRisks": ["patch.applied"],
+              "note": "Successful cases check configuration before attempting code changes."
+            }
+          ]
+        },
+        "notes": [
+          "Representative no-code incident fix.",
+          "Useful for validating blocker recognition and branch risk."
+        ]
+      },
+      "events": [
+        {
+          "source": "openclaw.dispatch",
+          "type": "incident.reported",
+          "ts": "2026-04-01T16:00:00.000Z"
+        },
+        {
+          "source": "tool.logs",
+          "type": "logs.inspected",
+          "ts": "2026-04-01T16:02:00.000Z",
+          "outcome": "success"
+        },
+        {
+          "source": "tool.env",
+          "type": "env.diff.checked",
+          "ts": "2026-04-01T16:05:00.000Z",
+          "outcome": "success"
+        },
+        {
+          "source": "tool.secrets",
+          "type": "secret.rotation.confirmed",
+          "ts": "2026-04-01T16:08:00.000Z",
+          "outcome": "success"
+        },
+        {
+          "source": "tool.webhooks",
+          "type": "webhook.replayed",
+          "ts": "2026-04-01T16:11:00.000Z",
+          "outcome": "success"
+        },
+        {
+          "source": "openclaw.task",
+          "type": "task.completed",
+          "ts": "2026-04-01T16:13:00.000Z",
+          "outcome": "success"
+        }
+      ]
+    },
+    {
+      "caseId": "incident-config-recovery-2",
+      "sourceTrace": "openclaw-dogfood",
+      "labels": ["workflow:incident-response", "domain:payments"],
+      "annotations": {
+        "workflowClass": "incident-response",
+        "taskBoundaries": [
+          {
+            "startStep": 1,
+            "endStep": 7,
+            "title": "Webhook failures after deploy",
+            "reason": "auto-first-message"
+          }
+        ],
+        "blockers": [
+          {
+            "step": 4,
+            "type": "premature-code-change",
+            "detail": "Agent attempted a patch before verifying environment drift",
+            "resolved": false
+          }
+        ],
+        "expectations": {
+          "terminalOutcome": "failure",
+          "nextByStep": [
+            {
+              "step": 3,
+              "expectedNext": ["env.diff.checked"],
+              "expectedRisks": ["patch.applied", "redeploy"],
+              "note": "Failure branch here is a useful regression target."
+            }
+          ]
+        }
+      },
+      "events": [
+        {
+          "source": "openclaw.dispatch",
+          "type": "incident.reported",
+          "ts": "2026-04-02T09:00:00.000Z"
+        },
+        {
+          "source": "tool.logs",
+          "type": "logs.inspected",
+          "ts": "2026-04-02T09:01:00.000Z",
+          "outcome": "success"
+        },
+        {
+          "source": "tool.edit",
+          "type": "patch.applied",
+          "ts": "2026-04-02T09:06:00.000Z",
+          "outcome": "success"
+        },
+        {
+          "source": "tool.deploy",
+          "type": "redeploy.triggered",
+          "ts": "2026-04-02T09:12:00.000Z",
+          "outcome": "unknown"
+        },
+        {
+          "source": "tool.webhooks",
+          "type": "webhook.still-failing",
+          "ts": "2026-04-02T09:18:00.000Z",
+          "outcome": "failure"
+        },
+        {
+          "source": "openclaw.task",
+          "type": "task.failed",
+          "ts": "2026-04-02T09:20:00.000Z",
+          "outcome": "failure"
+        }
+      ]
+    },
+    {
+      "caseId": "code-fix-test-loop-1",
+      "sourceTrace": "openclaw-dogfood",
+      "labels": ["workflow:code-fix", "domain:repo"],
+      "annotations": {
+        "workflowClass": "code-fix",
+        "taskBoundaries": [
+          {
+            "startStep": 1,
+            "endStep": 7,
+            "title": "Fix flaky test in CI",
+            "reason": "explicit"
+          }
+        ],
+        "expectations": {
+          "terminalOutcome": "success",
+          "nextByStep": [
+            {
+              "step": 2,
+              "expectedNext": ["tests.run"],
+              "note": "Healthy repair loop should inspect repo before running the failing test."
+            }
+          ]
+        }
+      },
+      "events": [
+        {
+          "source": "openclaw.dispatch",
+          "type": "request.received",
+          "ts": "2026-04-03T12:00:00.000Z"
+        },
+        {
+          "source": "tool.repo",
+          "type": "repo.inspected",
+          "ts": "2026-04-03T12:02:00.000Z",
+          "outcome": "success"
+        },
+        {
+          "source": "tool.test",
+          "type": "tests.run",
+          "ts": "2026-04-03T12:05:00.000Z",
+          "outcome": "success"
+        },
+        {
+          "source": "tool.edit",
+          "type": "patch.applied",
+          "ts": "2026-04-03T12:11:00.000Z",
+          "outcome": "success"
+        },
+        {
+          "source": "tool.test",
+          "type": "tests.passed",
+          "ts": "2026-04-03T12:15:00.000Z",
+          "outcome": "success"
+        },
+        {
+          "source": "openclaw.task",
+          "type": "task.completed",
+          "ts": "2026-04-03T12:17:00.000Z",
+          "outcome": "success"
+        }
+      ]
+    },
+    {
+      "caseId": "docs-change-approval-1",
+      "sourceTrace": "openclaw-dogfood",
+      "labels": ["workflow:docs-change", "domain:docs"],
+      "annotations": {
+        "workflowClass": "docs-change",
+        "taskBoundaries": [
+          {
+            "startStep": 1,
+            "endStep": 6,
+            "title": "Update customer migration guide",
+            "reason": "auto-first-message"
+          }
+        ],
+        "blockers": [
+          {
+            "step": 4,
+            "type": "approval-wait",
+            "detail": "Docs owner approval required before publishing",
+            "resolved": true
+          }
+        ],
+        "expectations": {
+          "terminalOutcome": "success"
+        }
+      },
+      "events": [
+        {
+          "source": "openclaw.dispatch",
+          "type": "request.received",
+          "ts": "2026-04-04T08:00:00.000Z"
+        },
+        {
+          "source": "tool.repo",
+          "type": "repo.inspected",
+          "ts": "2026-04-04T08:03:00.000Z",
+          "outcome": "success"
+        },
+        {
+          "source": "tool.docs",
+          "type": "docs.updated",
+          "ts": "2026-04-04T08:15:00.000Z",
+          "outcome": "success"
+        },
+        {
+          "source": "tool.review",
+          "type": "approval.requested",
+          "ts": "2026-04-04T08:21:00.000Z",
+          "outcome": "unknown"
+        },
+        {
+          "source": "tool.review",
+          "type": "approval.granted",
+          "ts": "2026-04-04T08:42:00.000Z",
+          "outcome": "success"
+        },
+        {
+          "source": "openclaw.task",
+          "type": "task.completed",
+          "ts": "2026-04-04T08:45:00.000Z",
+          "outcome": "success"
+        }
+      ]
+    }
+  ]
+}

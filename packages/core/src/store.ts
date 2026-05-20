@@ -24,7 +24,20 @@ function ensureColumn(db: DatabaseSyncType, table: string, column: string, defin
     return;
   }
 
-  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  try {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  } catch (error) {
+    const duplicateColumn =
+      error instanceof Error &&
+      /duplicate column name/i.test(error.message) &&
+      error.message.toLowerCase().includes(column.toLowerCase());
+
+    if (duplicateColumn && hasColumn(db, table, column)) {
+      return;
+    }
+
+    throw error;
+  }
 }
 
 function migrateGraphSchema(db: DatabaseSyncType) {
@@ -32,6 +45,7 @@ function migrateGraphSchema(db: DatabaseSyncType) {
   ensureColumn(db, "events", "outcome", "TEXT NOT NULL DEFAULT 'unknown'");
   ensureColumn(db, "events", "labels_json", "TEXT NOT NULL DEFAULT '[]'");
   ensureColumn(db, "events", "entities_json", "TEXT NOT NULL DEFAULT '[]'");
+  ensureColumn(db, "events", "projection_json", "TEXT NOT NULL DEFAULT 'null'");
   ensureColumn(db, "events", "metrics_json", "TEXT NOT NULL DEFAULT '{}'");
   ensureColumn(db, "events", "meta_json", "TEXT NOT NULL DEFAULT '{}'");
   ensureColumn(db, "events", "context", "TEXT");
@@ -76,6 +90,7 @@ export async function withGraphStore<T>(graphPath: string, handler: (db: Databas
         outcome TEXT NOT NULL,
         labels_json TEXT NOT NULL,
         entities_json TEXT NOT NULL,
+        projection_json TEXT NOT NULL DEFAULT 'null',
         metrics_json TEXT NOT NULL,
         meta_json TEXT NOT NULL,
         context TEXT
@@ -178,8 +193,8 @@ export function insertEvents(db: DatabaseSyncType, events: SherpaEvent[]) {
   const statement = db.prepare(`
     INSERT INTO events (
       event_id, schema_version, agent_id, case_id, ts, source, type, actor, outcome,
-      labels_json, entities_json, metrics_json, meta_json, context
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      labels_json, entities_json, projection_json, metrics_json, meta_json, context
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   for (const event of events) {
@@ -195,6 +210,7 @@ export function insertEvents(db: DatabaseSyncType, events: SherpaEvent[]) {
       event.outcome,
       json(event.labels),
       json(event.entities),
+      event.projection ? json(event.projection) : "null",
       json(event.metrics),
       json(event.meta),
       event.context ? json(event.context) : null

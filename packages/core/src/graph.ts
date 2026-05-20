@@ -1,4 +1,10 @@
-import type { SherpaEvent } from "./types.js";
+import type { SherpaEvent, SherpaStateStrategy } from "./types.js";
+import {
+  deriveSequenceProjectionStates,
+  stateDimensionsForStrategy,
+  type SherpaDerivedEventState,
+  type SherpaStateDimension
+} from "./projection.js";
 
 function classifyUserResponse(event: SherpaEvent) {
   if (event.actor !== "user") {
@@ -14,6 +20,96 @@ function classifyUserResponse(event: SherpaEvent) {
 
 export function stateKeyFromEvents(eventTypes: string[]) {
   return eventTypes.join(" -> ");
+}
+
+export interface StateVariant {
+  stateTokens: string[];
+  stateKey: string;
+  facetFields: readonly string[];
+  specificity: number;
+  mode: "projected" | "raw";
+}
+
+function eventStateToken(
+  event: SherpaEvent,
+  derived: SherpaDerivedEventState,
+  facetFields: readonly SherpaStateDimension[]
+) {
+  const facets = facetFields.flatMap((field) => {
+    if (field === "family") {
+      return derived.family ? [`family=${derived.family}`] : [];
+    }
+
+    if (field === "procedure") {
+      return derived.procedure ? [`procedure=${derived.procedure}`] : [];
+    }
+
+    return [];
+  });
+
+  if (facets.length === 0) {
+    return event.type;
+  }
+
+  return `${event.type} [${facets.join(",")}]`;
+}
+
+export function buildStateVariants(
+  events: SherpaEvent[],
+  strategy: SherpaStateStrategy = "family-procedure",
+  options?: {
+    includeRawFallback?: boolean;
+    derivedStates?: readonly SherpaDerivedEventState[];
+  }
+): StateVariant[] {
+  const seen = new Set<string>();
+  const variants: StateVariant[] = [];
+  const includeRawFallback = options?.includeRawFallback ?? true;
+  const derivedStates =
+    options?.derivedStates && options.derivedStates.length === events.length
+      ? [...options.derivedStates]
+      : deriveSequenceProjectionStates(events);
+
+  for (const facetFields of stateDimensionsForStrategy(strategy)) {
+    if (!includeRawFallback && facetFields.length === 0) {
+      continue;
+    }
+
+    const usedFacetFields = facetFields.filter((field) =>
+      derivedStates.some((derived) => {
+        return field === "family" ? derived.family !== null : derived.procedure !== null;
+      })
+    );
+    const stateTokens = events.map((event, index) => eventStateToken(event, derivedStates[index]!, usedFacetFields));
+    const stateKey = stateKeyFromEvents(stateTokens);
+
+    if (seen.has(stateKey)) {
+      continue;
+    }
+
+    seen.add(stateKey);
+
+    variants.push({
+      stateTokens,
+      stateKey,
+      facetFields: usedFacetFields,
+      specificity: stateTokens.reduce((sum, token, index) => {
+        const rawType = events[index]?.type ?? "";
+        return sum + Math.max(0, token.length - rawType.length);
+      }, 0),
+      mode: usedFacetFields.length === 0 ? "raw" : "projected"
+    });
+  }
+
+  return variants;
+}
+
+export function describeStateVariant(variant: StateVariant) {
+  if (variant.mode === "raw" || variant.facetFields.length === 0) {
+    return "raw suffix";
+  }
+
+  return `projected state (${variant.facetFields.join(" + ")})`;
 }
 
 const NON_TERMINAL_EVENT_SUFFIXES = [
@@ -61,13 +157,22 @@ function inferTerminalOutcome(events: SherpaEvent[]): SherpaEvent["outcome"] {
   return events.at(-1)?.outcome ?? "unknown";
 }
 
-export function buildDerivedRows(events: SherpaEvent[], maxOrder: number) {
+export function buildDerivedRows(
+  events: SherpaEvent[],
+  maxOrder: number,
+  strategy: SherpaStateStrategy = "family-procedure",
+  options?: {
+    includeRawFallback?: boolean;
+  }
+) {
   const grouped = new Map<string, SherpaEvent[]>();
+  const insertionOrder = new Map<string, number>();
 
-  for (const event of events) {
+  for (const [index, event] of events.entries()) {
     const current = grouped.get(event.caseId) ?? [];
     current.push(event);
     grouped.set(event.caseId, current);
+    insertionOrder.set(event.eventId, index);
   }
 
   const caseRows: Array<{
@@ -105,9 +210,9 @@ export function buildDerivedRows(events: SherpaEvent[], maxOrder: number) {
         return left.ts.localeCompare(right.ts);
       }
 
-      return left.eventId.localeCompare(right.eventId);
+      return (insertionOrder.get(left.eventId) ?? 0) - (insertionOrder.get(right.eventId) ?? 0);
     });
-
+    const derivedStates = deriveSequenceProjectionStates(ordered);
     const terminalOutcome = inferTerminalOutcome(ordered);
 
     caseRows.push({
@@ -127,71 +232,74 @@ export function buildDerivedRows(events: SherpaEvent[], maxOrder: number) {
           break;
         }
 
-        const history = ordered.slice(start, index + 1).map((event) => event.type);
+        const historyEvents = ordered.slice(start, index + 1);
+        const historyDerivedStates = derivedStates.slice(start, index + 1);
         const nextEvent = ordered[index + 1];
-
-        if (!nextEvent) {
-          continue;
-        }
-
-        const key = `${order}::${stateKeyFromEvents(history)}::${nextEvent.type}`;
-        const current = edgeMap.get(key) ?? {
-          orderN: order,
-          stateKey: stateKeyFromEvents(history),
-          nextEvent: nextEvent.type,
-          support: 0,
-          successCount: 0,
-          failureCount: 0,
-          terminalSuccessCount: 0,
-          terminalFailureCount: 0,
-          terminalUnknownCount: 0,
-          totalDurationMs: 0,
-          minDurationMs: null,
-          maxDurationMs: null,
-          lastSeenAt: nextEvent.ts,
-          responseDist: {}
-        };
         const currentEvent = ordered[index];
 
-        if (!currentEvent) {
+        if (!nextEvent || !currentEvent) {
           continue;
         }
 
         const durationMs = Math.max(0, Date.parse(nextEvent.ts) - Date.parse(currentEvent.ts));
+        const stateVariants = buildStateVariants(historyEvents, strategy, {
+          ...options,
+          derivedStates: historyDerivedStates
+        });
 
-        current.support += 1;
-        current.lastSeenAt = nextEvent.ts > current.lastSeenAt ? nextEvent.ts : current.lastSeenAt;
-        current.totalDurationMs += Number.isFinite(durationMs) ? durationMs : 0;
-        current.minDurationMs =
-          current.minDurationMs === null ? durationMs : Math.min(current.minDurationMs, durationMs);
-        current.maxDurationMs =
-          current.maxDurationMs === null ? durationMs : Math.max(current.maxDurationMs, durationMs);
+        for (const variant of stateVariants) {
+          const key = `${order}::${variant.stateKey}::${nextEvent.type}`;
+          const current = edgeMap.get(key) ?? {
+            orderN: order,
+            stateKey: variant.stateKey,
+            nextEvent: nextEvent.type,
+            support: 0,
+            successCount: 0,
+            failureCount: 0,
+            terminalSuccessCount: 0,
+            terminalFailureCount: 0,
+            terminalUnknownCount: 0,
+            totalDurationMs: 0,
+            minDurationMs: null,
+            maxDurationMs: null,
+            lastSeenAt: nextEvent.ts,
+            responseDist: {}
+          };
 
-        if (nextEvent.outcome === "success") {
-          current.successCount += 1;
-        } else if (nextEvent.outcome === "failure") {
-          current.failureCount += 1;
-        }
+          current.support += 1;
+          current.lastSeenAt = nextEvent.ts > current.lastSeenAt ? nextEvent.ts : current.lastSeenAt;
+          current.totalDurationMs += Number.isFinite(durationMs) ? durationMs : 0;
+          current.minDurationMs =
+            current.minDurationMs === null ? durationMs : Math.min(current.minDurationMs, durationMs);
+          current.maxDurationMs =
+            current.maxDurationMs === null ? durationMs : Math.max(current.maxDurationMs, durationMs);
 
-        if (terminalOutcome === "success") {
-          current.terminalSuccessCount += 1;
-        } else if (terminalOutcome === "failure") {
-          current.terminalFailureCount += 1;
-        } else {
-          current.terminalUnknownCount += 1;
-        }
-
-        for (let futureIndex = index + 2; futureIndex < ordered.length; futureIndex += 1) {
-          const userResponse = classifyUserResponse(ordered[futureIndex]!);
-          if (!userResponse) {
-            continue;
+          if (nextEvent.outcome === "success") {
+            current.successCount += 1;
+          } else if (nextEvent.outcome === "failure") {
+            current.failureCount += 1;
           }
 
-          current.responseDist[userResponse] = (current.responseDist[userResponse] ?? 0) + 1;
-          break;
-        }
+          if (terminalOutcome === "success") {
+            current.terminalSuccessCount += 1;
+          } else if (terminalOutcome === "failure") {
+            current.terminalFailureCount += 1;
+          } else {
+            current.terminalUnknownCount += 1;
+          }
 
-        edgeMap.set(key, current);
+          for (let futureIndex = index + 2; futureIndex < ordered.length; futureIndex += 1) {
+            const userResponse = classifyUserResponse(ordered[futureIndex]!);
+            if (!userResponse) {
+              continue;
+            }
+
+            current.responseDist[userResponse] = (current.responseDist[userResponse] ?? 0) + 1;
+            break;
+          }
+
+          edgeMap.set(key, current);
+        }
       }
     }
   }

@@ -121,7 +121,10 @@ export async function createClassifier(overrides?: Partial<LlmConfig>) {
 
   return {
     classify: (batch: ConsolidationBatch) =>
-      callClaude(batch, { cli, model }),
+      callClaude(batch, {
+        cli,
+        ...(model ? { model } : {})
+      }),
     model: model ?? `${cli}-default`
   };
 }

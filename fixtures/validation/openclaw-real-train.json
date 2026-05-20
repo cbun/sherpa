@@ -1,0 +1,12 @@
+{
+  "name": "openclaw-real-train",
+  "description": "Seed layout for Sherpa evidence-grade training traces. Populate with anonymized real OpenClaw cases before using for claims.",
+  "schemaVersion": 1,
+  "ontologyVersion": "draft-v1",
+  "split": "train",
+  "notes": [
+    "This file establishes the train split layout.",
+    "Do not treat this seed file as an evidence-grade corpus until it contains real annotated traces."
+  ],
+  "cases": []
+}

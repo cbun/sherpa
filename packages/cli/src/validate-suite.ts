@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { type ValidationDatasetLoadOptions, type ValidationReport, type ValidationThresholds, assertValidationThresholds, validateDatasetFile } from "./validate.js";
+import { type ValidationDatasetLoadOptions, type ValidationReport, type ValidationResearchMetrics, type ValidationThresholds, assertValidationThresholds, validateDatasetFile } from "./validate.js";
 
 export interface ValidationSuiteDatasetEntry extends ValidationDatasetLoadOptions {
   path: string;
@@ -32,6 +32,35 @@ export interface ValidationSuiteReport {
 
 export interface ValidationSuiteThresholds extends ValidationThresholds {
   maxFailingDatasets?: number;
+}
+
+function emptyResearchMetrics(): ValidationResearchMetrics {
+  return {
+    support: {
+      matchedSteps: 0,
+      unmatchedSteps: 0,
+      averageCandidateCount: 0,
+      averageTotalSupport: 0,
+      averageTopCandidateSupport: 0,
+      averageMatchedOrder: 0,
+      averageGraphStates: 0,
+      minGraphStates: 0,
+      maxGraphStates: 0
+    },
+    matchBreakdown: [],
+    risks: {
+      evaluatedSteps: 0,
+      expectedRiskCount: 0,
+      predictedRiskCount: 0,
+      truePositiveCount: 0,
+      falsePositiveCount: 0,
+      falseNegativeCount: 0,
+      precision: null,
+      recall: null,
+      misses: [],
+      falsePositives: []
+    }
+  };
 }
 
 const SUPPORTED_EXTENSIONS = new Set([".json", ".jsonl", ".csv", ".xes"]);
@@ -172,11 +201,13 @@ export function assertValidationSuiteThresholds(
 
   assertValidationThresholds(
     {
+      stateStrategy: "family-procedure",
       dataset: {
         name: report.suite.name,
         description: null,
         path: report.suite.path,
-        format: "json"
+        format: "json",
+        split: null
       },
       cases: report.totals.cases,
       datasetEvents: report.totals.datasetEvents,
@@ -186,7 +217,8 @@ export function assertValidationSuiteThresholds(
       topK: 0,
       missCount: report.totals.missCount,
       eventBreakdown: [],
-      misses: []
+      misses: [],
+      research: emptyResearchMetrics()
     },
     thresholds
   );

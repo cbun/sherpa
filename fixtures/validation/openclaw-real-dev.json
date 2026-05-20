@@ -1,0 +1,12 @@
+{
+  "name": "openclaw-real-dev",
+  "description": "Seed layout for Sherpa evidence-grade development traces. Use only for strategy and threshold iteration.",
+  "schemaVersion": 1,
+  "ontologyVersion": "draft-v1",
+  "split": "dev",
+  "notes": [
+    "This file establishes the dev split layout.",
+    "Tune retrieval strategies, projection prompts, and advisory thresholds here rather than on the test split."
+  ],
+  "cases": []
+}

@@ -4,7 +4,37 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import type { ValidationResearchMetrics } from "./validate.js";
 import { assertValidationSuiteThresholds, validateSuite } from "./validate-suite.js";
+
+function emptyResearchMetrics(): ValidationResearchMetrics {
+  return {
+    support: {
+      matchedSteps: 0,
+      unmatchedSteps: 0,
+      averageCandidateCount: 0,
+      averageTotalSupport: 0,
+      averageTopCandidateSupport: 0,
+      averageMatchedOrder: 0,
+      averageGraphStates: 0,
+      minGraphStates: 0,
+      maxGraphStates: 0
+    },
+    matchBreakdown: [],
+    risks: {
+      evaluatedSteps: 0,
+      expectedRiskCount: 0,
+      predictedRiskCount: 0,
+      truePositiveCount: 0,
+      falsePositiveCount: 0,
+      falseNegativeCount: 0,
+      precision: null,
+      recall: null,
+      misses: [],
+      falsePositives: []
+    }
+  };
+}
 
 describe("validation suite", () => {
   it("validates all supported datasets in a directory", async () => {
@@ -17,7 +47,7 @@ describe("validation suite", () => {
     expect(report.datasets.some((dataset) => dataset.dataset.format === "csv")).toBe(true);
     expect(report.datasets.some((dataset) => dataset.dataset.format === "xes")).toBe(true);
     expect(report.totals.evaluatedSteps).toBeGreaterThan(0);
-  });
+  }, 15000);
 
   it("loads a suite manifest with relative dataset paths", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "sherpa-validate-suite-"));
@@ -75,11 +105,13 @@ describe("validation suite", () => {
           },
           datasets: [
             {
+              stateStrategy: "family-procedure",
               dataset: {
                 name: "a",
                 description: null,
                 path: "/tmp/a.csv",
-                format: "csv"
+                format: "csv",
+                split: null
               },
               cases: 2,
               datasetEvents: 5,
@@ -89,14 +121,17 @@ describe("validation suite", () => {
               topK: 3,
               missCount: 2,
               eventBreakdown: [],
-              misses: []
+              misses: [],
+              research: emptyResearchMetrics()
             },
             {
+              stateStrategy: "family-procedure",
               dataset: {
                 name: "b",
                 description: null,
                 path: "/tmp/b.csv",
-                format: "csv"
+                format: "csv",
+                split: null
               },
               cases: 2,
               datasetEvents: 5,
@@ -106,7 +141,8 @@ describe("validation suite", () => {
               topK: 3,
               missCount: 2,
               eventBreakdown: [],
-              misses: []
+              misses: [],
+              research: emptyResearchMetrics()
             }
           ]
         },

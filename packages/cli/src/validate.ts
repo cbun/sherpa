@@ -5,16 +5,55 @@ import path from "node:path";
 import { parse as parseCsv } from "csv-parse/sync";
 import { XMLParser } from "fast-xml-parser";
 
-import { SherpaEngine, type SherpaEventInput, type SherpaOutcome } from "@sherpa/core";
+import { SherpaEngine, type SherpaEventInput, type SherpaOutcome, type SherpaStateStrategy } from "@sherpa/core";
+
+export interface ValidationTaskBoundary {
+  startStep: number;
+  endStep?: number;
+  title?: string;
+  reason?: string;
+}
+
+export interface ValidationBlocker {
+  step: number;
+  type: string;
+  detail?: string;
+  resolved?: boolean;
+}
+
+export interface ValidationStepExpectation {
+  step: number;
+  expectedNext?: string[];
+  expectedRisks?: string[];
+  note?: string;
+}
+
+export interface ValidationCaseAnnotations {
+  workflowClass?: string;
+  taskBoundaries?: ValidationTaskBoundary[];
+  blockers?: ValidationBlocker[];
+  expectations?: {
+    nextByStep?: ValidationStepExpectation[];
+    terminalOutcome?: SherpaOutcome;
+  };
+  notes?: string[];
+}
 
 export interface ValidationCase {
   caseId: string;
   events: SherpaEventInput[];
+  labels?: string[];
+  sourceTrace?: string;
+  annotations?: ValidationCaseAnnotations;
 }
 
 export interface ValidationDataset {
   name: string;
   description?: string;
+  schemaVersion?: number;
+  ontologyVersion?: string;
+  split?: "train" | "dev" | "test";
+  notes?: string[];
   cases: ValidationCase[];
 }
 
@@ -23,6 +62,20 @@ export interface ValidationMiss {
   step: number;
   expected: string;
   predicted: string[];
+}
+
+export interface ValidationRiskMiss {
+  caseId: string;
+  step: number;
+  expectedRisks: string[];
+  predictedRisks: string[];
+}
+
+export interface ValidationRiskFalsePositive {
+  caseId: string;
+  step: number;
+  expectedRisks: string[];
+  predictedRisks: string[];
 }
 
 export interface ValidationEventBreakdown {
@@ -34,6 +87,44 @@ export interface ValidationEventBreakdown {
   topKAccuracy: number;
 }
 
+export interface ValidationMatchBreakdown {
+  mode: "projected" | "raw" | "none";
+  matchedOrder: number;
+  occurrences: number;
+  share: number;
+}
+
+export interface ValidationSupportMetrics {
+  matchedSteps: number;
+  unmatchedSteps: number;
+  averageCandidateCount: number;
+  averageTotalSupport: number;
+  averageTopCandidateSupport: number;
+  averageMatchedOrder: number;
+  averageGraphStates: number;
+  minGraphStates: number;
+  maxGraphStates: number;
+}
+
+export interface ValidationRiskMetrics {
+  evaluatedSteps: number;
+  expectedRiskCount: number;
+  predictedRiskCount: number;
+  truePositiveCount: number;
+  falsePositiveCount: number;
+  falseNegativeCount: number;
+  precision: number | null;
+  recall: number | null;
+  misses: ValidationRiskMiss[];
+  falsePositives: ValidationRiskFalsePositive[];
+}
+
+export interface ValidationResearchMetrics {
+  support: ValidationSupportMetrics;
+  matchBreakdown: ValidationMatchBreakdown[];
+  risks: ValidationRiskMetrics;
+}
+
 export interface ValidationThresholds {
   minTop1Accuracy?: number;
   minTopKAccuracy?: number;
@@ -41,11 +132,13 @@ export interface ValidationThresholds {
 }
 
 export interface ValidationReport {
+  stateStrategy: SherpaStateStrategy;
   dataset: {
     name: string;
     description: string | null;
     path: string;
     format: ValidationDatasetFormat;
+    split: ValidationDataset["split"] | null;
   };
   cases: number;
   datasetEvents: number;
@@ -56,6 +149,30 @@ export interface ValidationReport {
   missCount: number;
   eventBreakdown: ValidationEventBreakdown[];
   misses: ValidationMiss[];
+  research: ValidationResearchMetrics;
+}
+
+export interface ValidationComparisonReport {
+  strategies: ValidationReport[];
+  bestByAccuracy: {
+    stateStrategy: SherpaStateStrategy;
+    nextTop1Accuracy: number;
+    nextTopKAccuracy: number;
+    missCount: number;
+  } | null;
+  bestByRiskRecall: {
+    stateStrategy: SherpaStateStrategy;
+    precision: number | null;
+    recall: number | null;
+    expectedRiskCount: number;
+    predictedRiskCount: number;
+  } | null;
+  bestBySupportDensity: {
+    stateStrategy: SherpaStateStrategy;
+    averageTotalSupport: number;
+    averageTopCandidateSupport: number;
+    averageGraphStates: number;
+  } | null;
 }
 
 export type ValidationDatasetFormat = "json" | "jsonl" | "csv" | "xes";
@@ -105,6 +222,19 @@ function arrayify<T>(value: T | T[] | undefined) {
   }
 
   return Array.isArray(value) ? value : [value];
+}
+
+function recordify(value: unknown) {
+  return value !== null && typeof value === "object" ? (value as Record<string, unknown>) : null;
+}
+
+function stringArray(value: unknown) {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const strings = value.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0);
+  return strings.length > 0 ? strings : undefined;
 }
 
 function resolveDatasetFormat(datasetPath: string, requested: ValidationDatasetLoadOptions["format"]): ValidationDatasetFormat {
@@ -176,16 +306,21 @@ function inferOutcome(value: unknown): SherpaOutcome {
 function sortCases(cases: ValidationCase[]) {
   return cases.map((validationCase) => ({
     ...validationCase,
-    events: [...validationCase.events].sort((left, right) => {
-      const leftTs = left.ts ?? "";
-      const rightTs = right.ts ?? "";
+    events: validationCase.events
+      .map((event, index) => ({ event, index }))
+      .sort((left, right) => {
+        const leftTs = typeof left.event.ts === "string" ? Date.parse(left.event.ts) : Number.NaN;
+        const rightTs = typeof right.event.ts === "string" ? Date.parse(right.event.ts) : Number.NaN;
+        const leftHasTimestamp = Number.isFinite(leftTs);
+        const rightHasTimestamp = Number.isFinite(rightTs);
 
-      if (leftTs !== rightTs) {
-        return leftTs.localeCompare(rightTs);
-      }
+        if (leftHasTimestamp && rightHasTimestamp && leftTs !== rightTs) {
+          return leftTs - rightTs;
+        }
 
-      return String(left.type).localeCompare(String(right.type));
-    })
+        return left.index - right.index;
+      })
+      .map(({ event }) => event)
   }));
 }
 
@@ -221,13 +356,120 @@ function normalizeCaseEvents(validationCase: Record<string, unknown>) {
   }
 
   const events = Array.isArray(validationCase.events) ? validationCase.events : [];
+  const annotations = recordify(validationCase.annotations);
+  const expectations = recordify(annotations?.expectations);
+
   return {
     caseId,
     events: events.map((event) => ({
       ...(event as SherpaEventInput),
       caseId
-    }))
-  };
+    })),
+    ...(stringArray(validationCase.labels) ? { labels: stringArray(validationCase.labels) } : {}),
+    ...(typeof validationCase.sourceTrace === "string" && validationCase.sourceTrace.trim().length > 0
+      ? { sourceTrace: validationCase.sourceTrace.trim() }
+      : {}),
+    ...(annotations
+      ? {
+          annotations: {
+            ...(typeof annotations.workflowClass === "string" && annotations.workflowClass.trim().length > 0
+              ? { workflowClass: annotations.workflowClass.trim() }
+              : {}),
+            ...(Array.isArray(annotations.taskBoundaries)
+              ? {
+                  taskBoundaries: annotations.taskBoundaries
+                    .map((entry) => recordify(entry))
+                    .filter((entry): entry is Record<string, unknown> => entry !== null)
+                    .flatMap((entry) => {
+                      const startStep = typeof entry.startStep === "number" ? entry.startStep : Number.NaN;
+                      if (!Number.isFinite(startStep)) {
+                        return [];
+                      }
+
+                      return [
+                        {
+                          startStep,
+                          ...(typeof entry.endStep === "number" && Number.isFinite(entry.endStep)
+                            ? { endStep: entry.endStep }
+                            : {}),
+                          ...(typeof entry.title === "string" && entry.title.trim().length > 0
+                            ? { title: entry.title.trim() }
+                            : {}),
+                          ...(typeof entry.reason === "string" && entry.reason.trim().length > 0
+                            ? { reason: entry.reason.trim() }
+                            : {})
+                        }
+                      ];
+                    })
+                }
+              : {}),
+            ...(Array.isArray(annotations.blockers)
+              ? {
+                  blockers: annotations.blockers
+                    .map((entry) => recordify(entry))
+                    .filter((entry): entry is Record<string, unknown> => entry !== null)
+                    .flatMap((entry) => {
+                      const step = typeof entry.step === "number" ? entry.step : Number.NaN;
+                      const type = typeof entry.type === "string" ? entry.type.trim() : "";
+
+                      if (!Number.isFinite(step) || type.length === 0) {
+                        return [];
+                      }
+
+                      return [
+                        {
+                          step,
+                          type,
+                          ...(typeof entry.detail === "string" && entry.detail.trim().length > 0
+                            ? { detail: entry.detail.trim() }
+                            : {}),
+                          ...(typeof entry.resolved === "boolean" ? { resolved: entry.resolved } : {})
+                        }
+                      ];
+                    })
+                }
+              : {}),
+            ...(expectations
+              ? {
+                  expectations: {
+                    ...(Array.isArray(expectations.nextByStep)
+                      ? {
+                          nextByStep: expectations.nextByStep
+                            .map((entry) => recordify(entry))
+                            .filter((entry): entry is Record<string, unknown> => entry !== null)
+                            .flatMap((entry) => {
+                              const step = typeof entry.step === "number" ? entry.step : Number.NaN;
+                              if (!Number.isFinite(step)) {
+                                return [];
+                              }
+
+                              return [
+                                {
+                                  step,
+                                  ...(stringArray(entry.expectedNext) ? { expectedNext: stringArray(entry.expectedNext) } : {}),
+                                  ...(stringArray(entry.expectedRisks)
+                                    ? { expectedRisks: stringArray(entry.expectedRisks) }
+                                    : {}),
+                                  ...(typeof entry.note === "string" && entry.note.trim().length > 0
+                                    ? { note: entry.note.trim() }
+                                    : {})
+                                }
+                              ];
+                            })
+                        }
+                      : {}),
+                    ...(typeof expectations.terminalOutcome === "string" &&
+                    ["success", "failure", "unknown"].includes(expectations.terminalOutcome)
+                      ? { terminalOutcome: expectations.terminalOutcome as SherpaOutcome }
+                      : {})
+                  }
+                }
+              : {}),
+            ...(stringArray(annotations.notes) ? { notes: stringArray(annotations.notes) } : {})
+          }
+        }
+      : {})
+  } as ValidationCase;
 }
 
 function normalizeDelimitedRows(rows: Array<Record<string, unknown>>, fields: ValidationRowFields) {
@@ -259,6 +501,22 @@ function normalizeDelimitedRows(rows: Array<Record<string, unknown>>, fields: Va
       outcome: inferOutcome(row[fields.outcomeField])
     } satisfies SherpaEventInput;
   });
+}
+
+function materializeValidationCases(cases: ValidationCase[]) {
+  const baseTimeMs = Date.UTC(2026, 0, 1, 0, 0, 0, 0);
+
+  return cases.map((validationCase, caseIndex) => ({
+    ...validationCase,
+    events: validationCase.events.map((event, eventIndex) => ({
+      ...event,
+      caseId: validationCase.caseId,
+      eventId: event.eventId ?? `validation-${validationCase.caseId}-${eventIndex + 1}`,
+      ts:
+        event.ts ??
+        new Date(baseTimeMs + caseIndex * 24 * 60 * 60 * 1000 + eventIndex * 60 * 1000).toISOString()
+    }))
+  }));
 }
 
 function xesAttributes(node: Record<string, unknown>) {
@@ -381,6 +639,10 @@ export async function loadValidationDataset(
     | {
         name?: string;
         description?: string;
+        schemaVersion?: number;
+        ontologyVersion?: string;
+        split?: "train" | "dev" | "test";
+        notes?: string[];
         cases?: Array<Record<string, unknown>>;
       };
 
@@ -395,9 +657,15 @@ export async function loadValidationDataset(
   return {
     name: parsed.name ?? path.basename(datasetPath, path.extname(datasetPath)),
     ...(parsed.description ? { description: parsed.description } : {}),
+    ...(typeof parsed.schemaVersion === "number" ? { schemaVersion: parsed.schemaVersion } : {}),
+    ...(typeof parsed.ontologyVersion === "string" && parsed.ontologyVersion.trim().length > 0
+      ? { ontologyVersion: parsed.ontologyVersion.trim() }
+      : {}),
+    ...(parsed.split === "train" || parsed.split === "dev" || parsed.split === "test" ? { split: parsed.split } : {}),
+    ...(stringArray(parsed.notes) ? { notes: stringArray(parsed.notes) } : {}),
     format,
     cases: sortCases(Array.isArray(parsed.cases) ? parsed.cases.map(normalizeCaseEvents) : [])
-  };
+  } as ValidationDataset & { format: ValidationDatasetFormat };
 }
 
 export async function runValidationDataset(
@@ -408,19 +676,38 @@ export async function runValidationDataset(
     minOrder?: number;
     maxOrder?: number;
     minSupport?: number;
+    stateStrategy?: SherpaStateStrategy;
     topK?: number;
     maxMisses?: number;
   }
 ): Promise<ValidationReport> {
   const topK = options?.topK ?? 3;
   const maxMisses = options?.maxMisses ?? 25;
+  const stateStrategy = options?.stateStrategy ?? "family-procedure";
+  const materializedCases = materializeValidationCases(dataset.cases);
   let evaluatedSteps = 0;
   let top1Hits = 0;
   let topKHits = 0;
   const misses: ValidationMiss[] = [];
   const eventStats = new Map<string, { occurrences: number; top1Hits: number; topKHits: number }>();
+  const matchStats = new Map<string, { mode: ValidationMatchBreakdown["mode"]; matchedOrder: number; occurrences: number }>();
+  const graphStateSamples: number[] = [];
+  let matchedSteps = 0;
+  let unmatchedSteps = 0;
+  let candidateCountSum = 0;
+  let totalSupportSum = 0;
+  let topCandidateSupportSum = 0;
+  let matchedOrderSum = 0;
+  let riskEvaluatedSteps = 0;
+  let expectedRiskCount = 0;
+  let predictedRiskCount = 0;
+  let truePositiveRiskCount = 0;
+  let falsePositiveRiskCount = 0;
+  let falseNegativeRiskCount = 0;
+  const riskMisses: ValidationRiskMiss[] = [];
+  const riskFalsePositives: ValidationRiskFalsePositive[] = [];
 
-  for (const validationCase of dataset.cases) {
+  for (const validationCase of materializedCases) {
     if (validationCase.events.length < 2) {
       continue;
     }
@@ -428,16 +715,17 @@ export async function runValidationDataset(
     const tempParent = options?.rootParent ?? os.tmpdir();
     await fs.mkdir(tempParent, { recursive: true });
     const tempRoot = await fs.mkdtemp(path.join(tempParent, "sherpa-validate-"));
-    const engine = new SherpaEngine({
-      rootDir: tempRoot,
-      ...(options?.defaultOrder !== undefined ? { defaultOrder: options.defaultOrder } : {}),
-      ...(options?.minOrder !== undefined ? { minOrder: options.minOrder } : {}),
-      ...(options?.maxOrder !== undefined ? { maxOrder: options.maxOrder } : {}),
-      ...(options?.minSupport !== undefined ? { minSupport: options.minSupport } : {})
-    });
+      const engine = new SherpaEngine({
+        rootDir: tempRoot,
+        ...(options?.defaultOrder !== undefined ? { defaultOrder: options.defaultOrder } : {}),
+        ...(options?.minOrder !== undefined ? { minOrder: options.minOrder } : {}),
+        ...(options?.maxOrder !== undefined ? { maxOrder: options.maxOrder } : {}),
+        ...(options?.minSupport !== undefined ? { minSupport: options.minSupport } : {}),
+        stateStrategy
+      });
 
     try {
-      const trainingEvents = dataset.cases
+      const trainingEvents = materializedCases
         .filter((candidate) => candidate.caseId !== validationCase.caseId)
         .flatMap((candidate) => candidate.events);
 
@@ -445,6 +733,11 @@ export async function runValidationDataset(
         await engine.ingestBatch(trainingEvents);
       } else {
         await engine.init();
+      }
+
+      const expectationByStep = new Map<number, ValidationStepExpectation>();
+      for (const expectation of validationCase.annotations?.expectations?.nextByStep ?? []) {
+        expectationByStep.set(expectation.step, expectation);
       }
 
       for (let index = 0; index < validationCase.events.length - 1; index += 1) {
@@ -459,6 +752,18 @@ export async function runValidationDataset(
         const result = await engine.workflowNext(validationCase.caseId, topK);
         const predicted = result.candidates.map((candidate) => candidate.event);
         const top1 = predicted[0];
+        const totalSupport = result.candidates.reduce((sum, candidate) => sum + candidate.support, 0);
+        const topCandidateSupport = result.candidates[0]?.support ?? 0;
+        const matchMode = result.match?.mode ?? "none";
+        const matchedOrder = result.match?.matchedOrder ?? 0;
+        const matchKey = `${matchMode}:${matchedOrder}`;
+        const existingMatchStats = matchStats.get(matchKey) ?? {
+          mode: matchMode,
+          matchedOrder,
+          occurrences: 0
+        };
+        const status = await engine.status();
+        const expectation = expectationByStep.get(index + 1);
         const eventStat = eventStats.get(expectedNext.type) ?? {
           occurrences: 0,
           top1Hits: 0,
@@ -467,6 +772,18 @@ export async function runValidationDataset(
 
         evaluatedSteps += 1;
         eventStat.occurrences += 1;
+        candidateCountSum += result.candidates.length;
+        totalSupportSum += totalSupport;
+        topCandidateSupportSum += topCandidateSupport;
+        graphStateSamples.push(status.states);
+        existingMatchStats.occurrences += 1;
+
+        if (result.match) {
+          matchedSteps += 1;
+          matchedOrderSum += matchedOrder;
+        } else {
+          unmatchedSteps += 1;
+        }
 
         if (top1 === expectedNext.type) {
           top1Hits += 1;
@@ -488,20 +805,65 @@ export async function runValidationDataset(
         }
 
         eventStats.set(expectedNext.type, eventStat);
+        matchStats.set(matchKey, existingMatchStats);
+
+        const expectedRisks = expectation?.expectedRisks ?? [];
+        if (expectedRisks.length > 0) {
+          const riskResult = await engine.workflowRisks(validationCase.caseId, topK);
+          const predictedRiskSet = new Set<string>();
+          for (const risk of riskResult.risks) {
+            predictedRiskSet.add(risk.branch);
+            if (risk.semanticBranch) {
+              predictedRiskSet.add(risk.semanticBranch);
+            }
+          }
+          const predictedRisks = [...predictedRiskSet].sort();
+          const expectedRiskSet = new Set(expectedRisks);
+          const truePositives = expectedRisks.filter((risk) => predictedRiskSet.has(risk));
+          const falsePositives = predictedRisks.filter((risk) => !expectedRiskSet.has(risk));
+          const falseNegatives = expectedRisks.filter((risk) => !predictedRiskSet.has(risk));
+
+          riskEvaluatedSteps += 1;
+          expectedRiskCount += expectedRisks.length;
+          predictedRiskCount += predictedRisks.length;
+          truePositiveRiskCount += truePositives.length;
+          falsePositiveRiskCount += falsePositives.length;
+          falseNegativeRiskCount += falseNegatives.length;
+
+          if (falseNegatives.length > 0 && riskMisses.length < maxMisses) {
+            riskMisses.push({
+              caseId: validationCase.caseId,
+              step: index + 1,
+              expectedRisks,
+              predictedRisks
+            });
+          }
+
+          if (falsePositives.length > 0 && riskFalsePositives.length < maxMisses) {
+            riskFalsePositives.push({
+              caseId: validationCase.caseId,
+              step: index + 1,
+              expectedRisks,
+              predictedRisks
+            });
+          }
+        }
       }
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }
   }
 
-  const datasetEvents = dataset.cases.reduce((sum, validationCase) => sum + validationCase.events.length, 0);
+  const datasetEvents = materializedCases.reduce((sum, validationCase) => sum + validationCase.events.length, 0);
 
   return {
+    stateStrategy,
     dataset: {
       name: dataset.name,
       description: dataset.description ?? null,
       path: "",
-      format: "json"
+      format: "json",
+      split: dataset.split ?? null
     },
     cases: dataset.cases.length,
     datasetEvents,
@@ -530,7 +892,148 @@ export async function runValidationDataset(
 
         return left.event.localeCompare(right.event);
       }),
-    misses
+    misses,
+    research: {
+      support: {
+        matchedSteps,
+        unmatchedSteps,
+        averageCandidateCount: evaluatedSteps === 0 ? 0 : Number((candidateCountSum / evaluatedSteps).toFixed(3)),
+        averageTotalSupport: evaluatedSteps === 0 ? 0 : Number((totalSupportSum / evaluatedSteps).toFixed(3)),
+        averageTopCandidateSupport: evaluatedSteps === 0 ? 0 : Number((topCandidateSupportSum / evaluatedSteps).toFixed(3)),
+        averageMatchedOrder: matchedSteps === 0 ? 0 : Number((matchedOrderSum / matchedSteps).toFixed(3)),
+        averageGraphStates:
+          graphStateSamples.length === 0
+            ? 0
+            : Number((graphStateSamples.reduce((sum, count) => sum + count, 0) / graphStateSamples.length).toFixed(3)),
+        minGraphStates: graphStateSamples.length === 0 ? 0 : Math.min(...graphStateSamples),
+        maxGraphStates: graphStateSamples.length === 0 ? 0 : Math.max(...graphStateSamples)
+      },
+      matchBreakdown: [...matchStats.values()]
+        .map((stats) => ({
+          mode: stats.mode,
+          matchedOrder: stats.matchedOrder,
+          occurrences: stats.occurrences,
+          share: evaluatedSteps === 0 ? 0 : Number((stats.occurrences / evaluatedSteps).toFixed(3))
+        }))
+        .sort((left, right) => {
+          if (right.occurrences !== left.occurrences) {
+            return right.occurrences - left.occurrences;
+          }
+
+          if (right.matchedOrder !== left.matchedOrder) {
+            return right.matchedOrder - left.matchedOrder;
+          }
+
+          return left.mode.localeCompare(right.mode);
+        }),
+      risks: {
+        evaluatedSteps: riskEvaluatedSteps,
+        expectedRiskCount,
+        predictedRiskCount,
+        truePositiveCount: truePositiveRiskCount,
+        falsePositiveCount: falsePositiveRiskCount,
+        falseNegativeCount: falseNegativeRiskCount,
+        precision:
+          predictedRiskCount === 0 ? null : Number((truePositiveRiskCount / predictedRiskCount).toFixed(3)),
+        recall: expectedRiskCount === 0 ? null : Number((truePositiveRiskCount / expectedRiskCount).toFixed(3)),
+        misses: riskMisses,
+        falsePositives: riskFalsePositives
+      }
+    }
+  };
+}
+
+export async function runValidationComparison(
+  dataset: ValidationDataset,
+  options: {
+    strategies: SherpaStateStrategy[];
+    rootParent?: string;
+    defaultOrder?: number;
+    minOrder?: number;
+    maxOrder?: number;
+    minSupport?: number;
+    topK?: number;
+    maxMisses?: number;
+  }
+): Promise<ValidationComparisonReport> {
+  const reports: ValidationReport[] = [];
+
+  for (const strategy of options.strategies) {
+    reports.push(
+      await runValidationDataset(dataset, {
+        ...options,
+        stateStrategy: strategy
+      })
+    );
+  }
+
+  const best = [...reports].sort((left, right) => {
+    if (right.nextTop1Accuracy !== left.nextTop1Accuracy) {
+      return right.nextTop1Accuracy - left.nextTop1Accuracy;
+    }
+
+    if (right.nextTopKAccuracy !== left.nextTopKAccuracy) {
+      return right.nextTopKAccuracy - left.nextTopKAccuracy;
+    }
+
+    return left.missCount - right.missCount;
+  })[0];
+  const bestRisk = reports
+    .filter((report) => report.research.risks.expectedRiskCount > 0)
+    .sort((left, right) => {
+      const leftRecall = left.research.risks.recall ?? -1;
+      const rightRecall = right.research.risks.recall ?? -1;
+      if (rightRecall !== leftRecall) {
+        return rightRecall - leftRecall;
+      }
+
+      const leftPrecision = left.research.risks.precision ?? -1;
+      const rightPrecision = right.research.risks.precision ?? -1;
+      if (rightPrecision !== leftPrecision) {
+        return rightPrecision - leftPrecision;
+      }
+
+      return left.missCount - right.missCount;
+    })[0];
+  const bestSupport = [...reports].sort((left, right) => {
+    if (right.research.support.averageTotalSupport !== left.research.support.averageTotalSupport) {
+      return right.research.support.averageTotalSupport - left.research.support.averageTotalSupport;
+    }
+
+    if (right.research.support.averageTopCandidateSupport !== left.research.support.averageTopCandidateSupport) {
+      return right.research.support.averageTopCandidateSupport - left.research.support.averageTopCandidateSupport;
+    }
+
+    return left.research.support.averageGraphStates - right.research.support.averageGraphStates;
+  })[0];
+
+  return {
+    strategies: reports,
+    bestByAccuracy: best
+      ? {
+          stateStrategy: best.stateStrategy,
+          nextTop1Accuracy: best.nextTop1Accuracy,
+          nextTopKAccuracy: best.nextTopKAccuracy,
+          missCount: best.missCount
+        }
+      : null,
+    bestByRiskRecall: bestRisk
+      ? {
+          stateStrategy: bestRisk.stateStrategy,
+          precision: bestRisk.research.risks.precision,
+          recall: bestRisk.research.risks.recall,
+          expectedRiskCount: bestRisk.research.risks.expectedRiskCount,
+          predictedRiskCount: bestRisk.research.risks.predictedRiskCount
+        }
+      : null,
+    bestBySupportDensity: bestSupport
+      ? {
+          stateStrategy: bestSupport.stateStrategy,
+          averageTotalSupport: bestSupport.research.support.averageTotalSupport,
+          averageTopCandidateSupport: bestSupport.research.support.averageTopCandidateSupport,
+          averageGraphStates: bestSupport.research.support.averageGraphStates
+        }
+      : null
   };
 }
 
@@ -542,6 +1045,7 @@ export async function validateDatasetFile(
     minOrder?: number;
     maxOrder?: number;
     minSupport?: number;
+    stateStrategy?: SherpaStateStrategy;
     topK?: number;
     maxMisses?: number;
   }
@@ -556,6 +1060,35 @@ export async function validateDatasetFile(
       path: datasetPath,
       format: dataset.format
     }
+  };
+}
+
+export async function compareDatasetFile(
+  datasetPath: string,
+  options: ValidationDatasetLoadOptions & {
+    strategies: SherpaStateStrategy[];
+    rootParent?: string;
+    defaultOrder?: number;
+    minOrder?: number;
+    maxOrder?: number;
+    minSupport?: number;
+    topK?: number;
+    maxMisses?: number;
+  }
+) {
+  const dataset = await loadValidationDataset(datasetPath, options);
+  const report = await runValidationComparison(dataset, options);
+
+  return {
+    ...report,
+    strategies: report.strategies.map((entry) => ({
+      ...entry,
+      dataset: {
+        ...entry.dataset,
+        path: datasetPath,
+        format: dataset.format
+      }
+    }))
   };
 }
 

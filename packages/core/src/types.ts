@@ -1,6 +1,20 @@
 import { z } from "zod";
 
+import {
+  SHERPA_ARTIFACT_CLASSES,
+  SHERPA_BLOCKER_TYPES,
+  SHERPA_INTENTS,
+  SHERPA_OPERATIONS,
+  SHERPA_TASK_CLASSES
+} from "./ontology.js";
+
 const OutcomeSchema = z.enum(["success", "failure", "unknown"]);
+const ProjectionSourceSchema = z.enum(["llm", "manual", "imported"]);
+const TaskClassSchema = z.enum(SHERPA_TASK_CLASSES);
+const IntentSchema = z.enum(SHERPA_INTENTS);
+const OperationSchema = z.enum(SHERPA_OPERATIONS);
+const ArtifactClassSchema = z.enum(SHERPA_ARTIFACT_CLASSES);
+const BlockerTypeSchema = z.enum(SHERPA_BLOCKER_TYPES);
 const SherpaEventContextSchema = z
   .object({
     text: z.string().max(500).optional(),
@@ -8,6 +22,21 @@ const SherpaEventContextSchema = z
     toolArgs: z.string().max(300).optional()
   })
   .optional();
+
+export const SherpaEventProjectionSchema = z.object({
+  version: z.string().min(1),
+  source: ProjectionSourceSchema,
+  confidence: z.number().min(0).max(1).optional(),
+  provider: z.string().min(1).optional(),
+  model: z.string().min(1).optional(),
+  promptVersion: z.string().min(1).optional(),
+  taskClass: TaskClassSchema.optional(),
+  intent: IntentSchema.optional(),
+  operation: OperationSchema.optional(),
+  artifactClass: ArtifactClassSchema.optional(),
+  blockerType: BlockerTypeSchema.optional(),
+  entityRoles: z.array(z.string()).default([])
+});
 
 export const SherpaEventSchema = z.object({
   eventId: z.string().min(1).default(() => crypto.randomUUID()),
@@ -21,6 +50,7 @@ export const SherpaEventSchema = z.object({
   outcome: OutcomeSchema.default("unknown"),
   labels: z.array(z.string()).default([]),
   entities: z.array(z.string()).default([]),
+  projection: SherpaEventProjectionSchema.optional(),
   metrics: z.record(z.string(), z.number()).default({}),
   meta: z.record(z.string(), z.unknown()).default({}),
   context: SherpaEventContextSchema
@@ -29,7 +59,26 @@ export const SherpaEventSchema = z.object({
 export type SherpaEvent = z.infer<typeof SherpaEventSchema>;
 export type SherpaEventInput = z.input<typeof SherpaEventSchema>;
 export type SherpaOutcome = z.infer<typeof OutcomeSchema>;
+export type SherpaEventProjection = z.infer<typeof SherpaEventProjectionSchema>;
+export type SherpaProjectionSource = z.infer<typeof ProjectionSourceSchema>;
 export type WorkflowRecallMode = "successful" | "failed" | "any";
+export type SherpaStateStrategy = "raw" | "procedure" | "family-procedure";
+
+export interface WorkflowMatchEvidence {
+  mode: "projected" | "raw";
+  description: string;
+  matchedOrder: number;
+  facetFields: string[];
+  state: string[];
+  stateKey: string;
+}
+
+export interface WorkflowSemanticDescriptor {
+  taskClass?: SherpaEventProjection["taskClass"];
+  operation?: SherpaEventProjection["operation"];
+  artifactClass?: SherpaEventProjection["artifactClass"];
+  blockerType?: SherpaEventProjection["blockerType"];
+}
 
 export interface SherpaEngineOptions {
   rootDir: string;
@@ -37,6 +86,10 @@ export interface SherpaEngineOptions {
   minOrder?: number;
   maxOrder?: number;
   minSupport?: number;
+  stateStrategy?: SherpaStateStrategy;
+  requireProjection?: boolean;
+  allowRawFallback?: boolean;
+  allowedProjectionSources?: SherpaProjectionSource[];
 }
 
 export interface WorkflowStateResult {
@@ -46,11 +99,14 @@ export interface WorkflowStateResult {
   matchedOrder: number;
   confidence: number;
   support: number;
+  matchedBy?: WorkflowMatchEvidence | null;
   recentEvents: SherpaEvent[];
 }
 
 export interface WorkflowNextCandidate {
   event: string;
+  semanticEvent?: string | null;
+  semanticProjection?: WorkflowSemanticDescriptor | null;
   probability: number;
   support: number;
   successRate: number | null;
@@ -65,11 +121,14 @@ export interface WorkflowNextCandidate {
 export interface WorkflowNextResult {
   caseId: string;
   state: string[];
+  match?: WorkflowMatchEvidence | null;
   candidates: WorkflowNextCandidate[];
 }
 
 export interface WorkflowRisk {
   branch: string;
+  semanticBranch?: string | null;
+  semanticProjection?: WorkflowSemanticDescriptor | null;
   kind: "stall" | "failure";
   probability: number;
   relativeRisk: number;
@@ -101,6 +160,7 @@ export interface WorkflowSignalsResult {
 export interface WorkflowRisksResult {
   caseId: string;
   state: string[];
+  match?: WorkflowMatchEvidence | null;
   risks: WorkflowRisk[];
 }
 
@@ -111,7 +171,9 @@ export interface WorkflowRecallPath {
   matchedOrder: number;
   confidence: number;
   score: number;
+  matchedBy?: WorkflowMatchEvidence;
   continuation: string[];
+  continuationSemantic?: string[];
 }
 
 export interface WorkflowRecallResult {
@@ -145,6 +207,10 @@ export interface WorkflowStatusResult {
     minOrder: number;
     maxOrder: number;
     minSupport: number;
+    stateStrategy: SherpaStateStrategy;
+    requireProjection: boolean;
+    allowRawFallback: boolean;
+    allowedProjectionSources: SherpaProjectionSource[];
   };
   ledgerPath: string;
   graphPath: string;

@@ -1,0 +1,12 @@
+{
+  "name": "openclaw-real-test",
+  "description": "Seed layout for Sherpa evidence-grade held-out traces. Keep frozen for final reporting.",
+  "schemaVersion": 1,
+  "ontologyVersion": "draft-v1",
+  "split": "test",
+  "notes": [
+    "This file establishes the frozen test split layout.",
+    "Do not tune projection prompts, retrieval strategies, or advisory thresholds on this split."
+  ],
+  "cases": []
+}

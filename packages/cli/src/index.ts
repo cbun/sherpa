@@ -3,12 +3,14 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 
-import { SherpaEngine, type SherpaEventInput, type WorkflowRecallMode } from "@sherpa/core";
+import { SherpaEngine, type SherpaEventInput, type SherpaStateStrategy, type WorkflowRecallMode } from "@sherpa/core";
 import { Command, type Command as CommandInstance } from "commander";
 
 import { assertValidationSuiteThresholds, validateSuite } from "./validate-suite.js";
 import { assertTaxonomyThresholds } from "./taxonomy.js";
+import { compareBaselineDatasetFile, parseBaselineList } from "./baselines.js";
 import { assertValidationThresholds, validateDatasetFile } from "./validate.js";
+import { runResearchGate } from "./research-gate.js";
 import { loadSessions, runSimulation } from "./simulate.js";
 
 function defaultRoot() {
@@ -119,6 +121,22 @@ function parseRecallMode(mode: string): WorkflowRecallMode {
   }
 
   throw new Error("workflow-recall --mode must be one of: successful, failed, any");
+}
+
+function parseStateStrategy(value: string): SherpaStateStrategy {
+  if (value === "raw" || value === "procedure" || value === "family-procedure") {
+    return value;
+  }
+
+  throw new Error("state strategy must be one of: raw, procedure, family-procedure");
+}
+
+function parseStateStrategyList(value: string): SherpaStateStrategy[] {
+  return value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map(parseStateStrategy);
 }
 
 async function readJsonBody(request: import("node:http").IncomingMessage) {
@@ -483,6 +501,100 @@ program
       ...(options.minTop1 ? { minTop1Accuracy: parseRatio(options.minTop1, "--min-top1") } : {}),
       ...(options.minTopk ? { minTopKAccuracy: parseRatio(options.minTopk, "--min-topk") } : {}),
       ...(options.maxMissCount ? { maxMissCount: parseInteger(options.maxMissCount, "--max-miss-count") } : {})
+    });
+    printJson(report);
+  });
+
+program
+  .command("validate-baselines")
+  .description("Run non-Sherpa baseline validation against a canonical Sherpa dataset")
+  .option("--dataset <file>", "JSON or JSONL validation dataset", path.join(process.cwd(), "fixtures/validation/synthetic-workflows.json"))
+  .option("--format <format>", "auto, json, jsonl, csv, or xes", "auto")
+  .option("--case-field <name>", "Case identifier field for CSV or XES imports")
+  .option("--type-field <name>", "Event type field for CSV or XES imports")
+  .option("--timestamp-field <name>", "Timestamp field for CSV or XES imports")
+  .option("--outcome-field <name>", "Outcome field for CSV or XES imports")
+  .option("--source-field <name>", "Event source field for CSV or XES imports")
+  .option("--agent-field <name>", "Agent identifier field for CSV or XES imports")
+  .option("--actor-field <name>", "Actor field for CSV or XES imports")
+  .option("--csv-delimiter <char>", "CSV delimiter for tabular imports", ",")
+  .option(
+    "--baselines <list>",
+    "Comma-separated baselines: global-majority, raw-ngram, workflow-class-ngram, semantic-rag-lite, textual-lesson-prior",
+    "global-majority,raw-ngram,workflow-class-ngram,semantic-rag-lite,textual-lesson-prior"
+  )
+  .option("--top-k <n>", "Maximum candidate window for accuracy scoring", "3")
+  .option("--order <n>", "Maximum raw n-gram suffix order", "3")
+  .option("--max-misses <n>", "Maximum number of miss examples to include in the report", "25")
+  .action(async (options) => {
+    const report = await compareBaselineDatasetFile(options.dataset, {
+      format: options.format,
+      ...(options.caseField ? { caseField: options.caseField } : {}),
+      ...(options.typeField ? { typeField: options.typeField } : {}),
+      ...(options.timestampField ? { timestampField: options.timestampField } : {}),
+      ...(options.outcomeField ? { outcomeField: options.outcomeField } : {}),
+      ...(options.sourceField ? { sourceField: options.sourceField } : {}),
+      ...(options.agentField ? { agentField: options.agentField } : {}),
+      ...(options.actorField ? { actorField: options.actorField } : {}),
+      ...(options.csvDelimiter ? { csvDelimiter: options.csvDelimiter } : {}),
+      baselines: parseBaselineList(options.baselines),
+      topK: parseInteger(options.topK, "--top-k"),
+      order: parseInteger(options.order, "--order"),
+      maxMisses: parseInteger(options.maxMisses, "--max-misses")
+    });
+    printJson(report);
+  });
+
+program
+  .command("research-gate")
+  .description("Run Sherpa strategy and baseline comparisons, then emit falsifiable thesis decisions")
+  .option("--dataset <file>", "JSON or JSONL validation dataset", path.join(process.cwd(), "fixtures/validation/synthetic-workflows.json"))
+  .option("--format <format>", "auto, json, jsonl, csv, or xes", "auto")
+  .option("--case-field <name>", "Case identifier field for CSV or XES imports")
+  .option("--type-field <name>", "Event type field for CSV or XES imports")
+  .option("--timestamp-field <name>", "Timestamp field for CSV or XES imports")
+  .option("--outcome-field <name>", "Outcome field for CSV or XES imports")
+  .option("--source-field <name>", "Event source field for CSV or XES imports")
+  .option("--agent-field <name>", "Agent identifier field for CSV or XES imports")
+  .option("--actor-field <name>", "Actor field for CSV or XES imports")
+  .option("--csv-delimiter <char>", "CSV delimiter for tabular imports", ",")
+  .option("--compare-strategies <list>", "Comma-separated Sherpa strategies", "raw,procedure,family-procedure")
+  .option(
+    "--baselines <list>",
+    "Comma-separated non-Sherpa baselines",
+    "global-majority,raw-ngram,workflow-class-ngram,semantic-rag-lite,textual-lesson-prior"
+  )
+  .option("--top-k <n>", "Maximum candidate window for accuracy scoring", "3")
+  .option("--baseline-order <n>", "Maximum raw n-gram suffix order for non-Sherpa baselines")
+  .option("--max-misses <n>", "Maximum number of miss examples to include in reports", "25")
+  .action(async (options, command) => {
+    const globals = command.optsWithGlobals() as {
+      root?: string;
+      defaultOrder?: string;
+      minOrder?: string;
+      maxOrder?: string;
+      minSupport?: string;
+    };
+    const report = await runResearchGate(options.dataset, {
+      rootParent: globals.root ?? defaultRoot(),
+      format: options.format,
+      ...(options.caseField ? { caseField: options.caseField } : {}),
+      ...(options.typeField ? { typeField: options.typeField } : {}),
+      ...(options.timestampField ? { timestampField: options.timestampField } : {}),
+      ...(options.outcomeField ? { outcomeField: options.outcomeField } : {}),
+      ...(options.sourceField ? { sourceField: options.sourceField } : {}),
+      ...(options.agentField ? { agentField: options.agentField } : {}),
+      ...(options.actorField ? { actorField: options.actorField } : {}),
+      ...(options.csvDelimiter ? { csvDelimiter: options.csvDelimiter } : {}),
+      ...(globals.defaultOrder ? { defaultOrder: parseInteger(globals.defaultOrder, "--default-order") } : {}),
+      ...(globals.minOrder ? { minOrder: parseInteger(globals.minOrder, "--min-order") } : {}),
+      ...(globals.maxOrder ? { maxOrder: parseInteger(globals.maxOrder, "--max-order") } : {}),
+      ...(globals.minSupport ? { minSupport: parseInteger(globals.minSupport, "--min-support") } : {}),
+      ...(options.baselineOrder ? { baselineOrder: parseInteger(options.baselineOrder, "--baseline-order") } : {}),
+      strategies: parseStateStrategyList(options.compareStrategies),
+      baselines: parseBaselineList(options.baselines),
+      topK: parseInteger(options.topK, "--top-k"),
+      maxMisses: parseInteger(options.maxMisses, "--max-misses")
     });
     printJson(report);
   });

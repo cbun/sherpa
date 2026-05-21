@@ -1,0 +1,2011 @@
+{
+  "dataset": "fixtures/validation/openclaw-realish.json",
+  "generatedAt": "2026-05-21T00:20:49.731Z",
+  "sherpa": {
+    "strategies": [
+      {
+        "stateStrategy": "raw",
+        "dataset": {
+          "name": "openclaw-realish",
+          "description": "Starter real-world-like workflow traces for incident response, code repair, docs work, and research flows.",
+          "path": "fixtures/validation/openclaw-realish.json",
+          "format": "json",
+          "split": null
+        },
+        "cases": 4,
+        "datasetEvents": 24,
+        "evaluatedSteps": 20,
+        "nextTop1Accuracy": 0.2,
+        "nextTopKAccuracy": 0.2,
+        "topK": 3,
+        "missCount": 16,
+        "eventBreakdown": [
+          {
+            "event": "task.completed",
+            "occurrences": 3,
+            "top1Hits": 0,
+            "topKHits": 0,
+            "top1Accuracy": 0,
+            "topKAccuracy": 0
+          },
+          {
+            "event": "patch.applied",
+            "occurrences": 2,
+            "top1Hits": 0,
+            "topKHits": 0,
+            "top1Accuracy": 0,
+            "topKAccuracy": 0
+          },
+          {
+            "event": "logs.inspected",
+            "occurrences": 2,
+            "top1Hits": 2,
+            "topKHits": 2,
+            "top1Accuracy": 1,
+            "topKAccuracy": 1
+          },
+          {
+            "event": "repo.inspected",
+            "occurrences": 2,
+            "top1Hits": 2,
+            "topKHits": 2,
+            "top1Accuracy": 1,
+            "topKAccuracy": 1
+          },
+          {
+            "event": "approval.granted",
+            "occurrences": 1,
+            "top1Hits": 0,
+            "topKHits": 0,
+            "top1Accuracy": 0,
+            "topKAccuracy": 0
+          },
+          {
+            "event": "approval.requested",
+            "occurrences": 1,
+            "top1Hits": 0,
+            "topKHits": 0,
+            "top1Accuracy": 0,
+            "topKAccuracy": 0
+          },
+          {
+            "event": "docs.updated",
+            "occurrences": 1,
+            "top1Hits": 0,
+            "topKHits": 0,
+            "top1Accuracy": 0,
+            "topKAccuracy": 0
+          },
+          {
+            "event": "env.diff.checked",
+            "occurrences": 1,
+            "top1Hits": 0,
+            "topKHits": 0,
+            "top1Accuracy": 0,
+            "topKAccuracy": 0
+          },
+          {
+            "event": "redeploy.triggered",
+            "occurrences": 1,
+            "top1Hits": 0,
+            "topKHits": 0,
+            "top1Accuracy": 0,
+            "topKAccuracy": 0
+          },
+          {
+            "event": "secret.rotation.confirmed",
+            "occurrences": 1,
+            "top1Hits": 0,
+            "topKHits": 0,
+            "top1Accuracy": 0,
+            "topKAccuracy": 0
+          },
+          {
+            "event": "task.failed",
+            "occurrences": 1,
+            "top1Hits": 0,
+            "topKHits": 0,
+            "top1Accuracy": 0,
+            "topKAccuracy": 0
+          },
+          {
+            "event": "tests.passed",
+            "occurrences": 1,
+            "top1Hits": 0,
+            "topKHits": 0,
+            "top1Accuracy": 0,
+            "topKAccuracy": 0
+          },
+          {
+            "event": "tests.run",
+            "occurrences": 1,
+            "top1Hits": 0,
+            "topKHits": 0,
+            "top1Accuracy": 0,
+            "topKAccuracy": 0
+          },
+          {
+            "event": "webhook.replayed",
+            "occurrences": 1,
+            "top1Hits": 0,
+            "topKHits": 0,
+            "top1Accuracy": 0,
+            "topKAccuracy": 0
+          },
+          {
+            "event": "webhook.still-failing",
+            "occurrences": 1,
+            "top1Hits": 0,
+            "topKHits": 0,
+            "top1Accuracy": 0,
+            "topKAccuracy": 0
+          }
+        ],
+        "misses": [
+          {
+            "caseId": "incident-config-recovery-1",
+            "step": 2,
+            "expected": "env.diff.checked",
+            "predicted": [
+              "patch.applied"
+            ]
+          },
+          {
+            "caseId": "incident-config-recovery-1",
+            "step": 3,
+            "expected": "secret.rotation.confirmed",
+            "predicted": []
+          },
+          {
+            "caseId": "incident-config-recovery-1",
+            "step": 4,
+            "expected": "webhook.replayed",
+            "predicted": []
+          },
+          {
+            "caseId": "incident-config-recovery-1",
+            "step": 5,
+            "expected": "task.completed",
+            "predicted": []
+          },
+          {
+            "caseId": "incident-config-recovery-2",
+            "step": 2,
+            "expected": "patch.applied",
+            "predicted": [
+              "env.diff.checked"
+            ]
+          },
+          {
+            "caseId": "incident-config-recovery-2",
+            "step": 3,
+            "expected": "redeploy.triggered",
+            "predicted": [
+              "tests.passed"
+            ]
+          },
+          {
+            "caseId": "incident-config-recovery-2",
+            "step": 4,
+            "expected": "webhook.still-failing",
+            "predicted": []
+          },
+          {
+            "caseId": "incident-config-recovery-2",
+            "step": 5,
+            "expected": "task.failed",
+            "predicted": []
+          },
+          {
+            "caseId": "code-fix-test-loop-1",
+            "step": 2,
+            "expected": "tests.run",
+            "predicted": [
+              "docs.updated"
+            ]
+          },
+          {
+            "caseId": "code-fix-test-loop-1",
+            "step": 3,
+            "expected": "patch.applied",
+            "predicted": []
+          },
+          {
+            "caseId": "code-fix-test-loop-1",
+            "step": 4,
+            "expected": "tests.passed",
+            "predicted": [
+              "redeploy.triggered"
+            ]
+          },
+          {
+            "caseId": "code-fix-test-loop-1",
+            "step": 5,
+            "expected": "task.completed",
+            "predicted": []
+          },
+          {
+            "caseId": "docs-change-approval-1",
+            "step": 2,
+            "expected": "docs.updated",
+            "predicted": [
+              "tests.run"
+            ]
+          },
+          {
+            "caseId": "docs-change-approval-1",
+            "step": 3,
+            "expected": "approval.requested",
+            "predicted": []
+          },
+          {
+            "caseId": "docs-change-approval-1",
+            "step": 4,
+            "expected": "approval.granted",
+            "predicted": []
+          },
+          {
+            "caseId": "docs-change-approval-1",
+            "step": 5,
+            "expected": "task.completed",
+            "predicted": []
+          }
+        ],
+        "research": {
+          "support": {
+            "matchedSteps": 10,
+            "unmatchedSteps": 10,
+            "averageCandidateCount": 0.5,
+            "averageTotalSupport": 0.5,
+            "averageTopCandidateSupport": 0.5,
+            "averageMatchedOrder": 1.4,
+            "averageGraphStates": 47.2,
+            "minGraphStates": 44,
+            "maxGraphStates": 53
+          },
+          "matchBreakdown": [
+            {
+              "mode": "none",
+              "matchedOrder": 0,
+              "occurrences": 10,
+              "share": 0.5
+            },
+            {
+              "mode": "raw",
+              "matchedOrder": 1,
+              "occurrences": 6,
+              "share": 0.3
+            },
+            {
+              "mode": "raw",
+              "matchedOrder": 2,
+              "occurrences": 4,
+              "share": 0.2
+            }
+          ],
+          "risks": {
+            "evaluatedSteps": 2,
+            "expectedRiskCount": 3,
+            "predictedRiskCount": 0,
+            "truePositiveCount": 0,
+            "falsePositiveCount": 0,
+            "falseNegativeCount": 3,
+            "precision": null,
+            "recall": 0,
+            "misses": [
+              {
+                "caseId": "incident-config-recovery-1",
+                "step": 3,
+                "expectedRisks": [
+                  "patch.applied"
+                ],
+                "predictedRisks": []
+              },
+              {
+                "caseId": "incident-config-recovery-2",
+                "step": 3,
+                "expectedRisks": [
+                  "patch.applied",
+                  "redeploy"
+                ],
+                "predictedRisks": []
+              }
+            ],
+            "falsePositives": []
+          }
+        }
+      },
+      {
+        "stateStrategy": "procedure",
+        "dataset": {
+          "name": "openclaw-realish",
+          "description": "Starter real-world-like workflow traces for incident response, code repair, docs work, and research flows.",
+          "path": "fixtures/validation/openclaw-realish.json",
+          "format": "json",
+          "split": null
+        },
+        "cases": 4,
+        "datasetEvents": 24,
+        "evaluatedSteps": 20,
+        "nextTop1Accuracy": 0.2,
+        "nextTopKAccuracy": 0.2,
+        "topK": 3,
+        "missCount": 16,
+        "eventBreakdown": [
+          {
+            "event": "task.completed",
+            "occurrences": 3,
+            "top1Hits": 0,
+            "topKHits": 0,
+            "top1Accuracy": 0,
+            "topKAccuracy": 0
+          },
+          {
+            "event": "patch.applied",
+            "occurrences": 2,
+            "top1Hits": 0,
+            "topKHits": 0,
+            "top1Accuracy": 0,
+            "topKAccuracy": 0
+          },
+          {
+            "event": "logs.inspected",
+            "occurrences": 2,
+            "top1Hits": 2,
+            "topKHits": 2,
+            "top1Accuracy": 1,
+            "topKAccuracy": 1
+          },
+          {
+            "event": "repo.inspected",
+            "occurrences": 2,
+            "top1Hits": 2,
+            "topKHits": 2,
+            "top1Accuracy": 1,
+            "topKAccuracy": 1
+          },
+          {
+            "event": "approval.granted",
+            "occurrences": 1,
+            "top1Hits": 0,
+            "topKHits": 0,
+            "top1Accuracy": 0,
+            "topKAccuracy": 0
+          },
+          {
+            "event": "approval.requested",
+            "occurrences": 1,
+            "top1Hits": 0,
+            "topKHits": 0,
+            "top1Accuracy": 0,
+            "topKAccuracy": 0
+          },
+          {
+            "event": "docs.updated",
+            "occurrences": 1,
+            "top1Hits": 0,
+            "topKHits": 0,
+            "top1Accuracy": 0,
+            "topKAccuracy": 0
+          },
+          {
+            "event": "env.diff.checked",
+            "occurrences": 1,
+            "top1Hits": 0,
+            "topKHits": 0,
+            "top1Accuracy": 0,
+            "topKAccuracy": 0
+          },
+          {
+            "event": "redeploy.triggered",
+            "occurrences": 1,
+            "top1Hits": 0,
+            "topKHits": 0,
+            "top1Accuracy": 0,
+            "topKAccuracy": 0
+          },
+          {
+            "event": "secret.rotation.confirmed",
+            "occurrences": 1,
+            "top1Hits": 0,
+            "topKHits": 0,
+            "top1Accuracy": 0,
+            "topKAccuracy": 0
+          },
+          {
+            "event": "task.failed",
+            "occurrences": 1,
+            "top1Hits": 0,
+            "topKHits": 0,
+            "top1Accuracy": 0,
+            "topKAccuracy": 0
+          },
+          {
+            "event": "tests.passed",
+            "occurrences": 1,
+            "top1Hits": 0,
+            "topKHits": 0,
+            "top1Accuracy": 0,
+            "topKAccuracy": 0
+          },
+          {
+            "event": "tests.run",
+            "occurrences": 1,
+            "top1Hits": 0,
+            "topKHits": 0,
+            "top1Accuracy": 0,
+            "topKAccuracy": 0
+          },
+          {
+            "event": "webhook.replayed",
+            "occurrences": 1,
+            "top1Hits": 0,
+            "topKHits": 0,
+            "top1Accuracy": 0,
+            "topKAccuracy": 0
+          },
+          {
+            "event": "webhook.still-failing",
+            "occurrences": 1,
+            "top1Hits": 0,
+            "topKHits": 0,
+            "top1Accuracy": 0,
+            "topKAccuracy": 0
+          }
+        ],
+        "misses": [
+          {
+            "caseId": "incident-config-recovery-1",
+            "step": 2,
+            "expected": "env.diff.checked",
+            "predicted": [
+              "patch.applied"
+            ]
+          },
+          {
+            "caseId": "incident-config-recovery-1",
+            "step": 3,
+            "expected": "secret.rotation.confirmed",
+            "predicted": []
+          },
+          {
+            "caseId": "incident-config-recovery-1",
+            "step": 4,
+            "expected": "webhook.replayed",
+            "predicted": []
+          },
+          {
+            "caseId": "incident-config-recovery-1",
+            "step": 5,
+            "expected": "task.completed",
+            "predicted": []
+          },
+          {
+            "caseId": "incident-config-recovery-2",
+            "step": 2,
+            "expected": "patch.applied",
+            "predicted": [
+              "env.diff.checked"
+            ]
+          },
+          {
+            "caseId": "incident-config-recovery-2",
+            "step": 3,
+            "expected": "redeploy.triggered",
+            "predicted": [
+              "tests.passed"
+            ]
+          },
+          {
+            "caseId": "incident-config-recovery-2",
+            "step": 4,
+            "expected": "webhook.still-failing",
+            "predicted": []
+          },
+          {
+            "caseId": "incident-config-recovery-2",
+            "step": 5,
+            "expected": "task.failed",
+            "predicted": []
+          },
+          {
+            "caseId": "code-fix-test-loop-1",
+            "step": 2,
+            "expected": "tests.run",
+            "predicted": [
+              "docs.updated"
+            ]
+          },
+          {
+            "caseId": "code-fix-test-loop-1",
+            "step": 3,
+            "expected": "patch.applied",
+            "predicted": []
+          },
+          {
+            "caseId": "code-fix-test-loop-1",
+            "step": 4,
+            "expected": "tests.passed",
+            "predicted": [
+              "redeploy.triggered"
+            ]
+          },
+          {
+            "caseId": "code-fix-test-loop-1",
+            "step": 5,
+            "expected": "task.completed",
+            "predicted": []
+          },
+          {
+            "caseId": "docs-change-approval-1",
+            "step": 2,
+            "expected": "docs.updated",
+            "predicted": [
+              "tests.run"
+            ]
+          },
+          {
+            "caseId": "docs-change-approval-1",
+            "step": 3,
+            "expected": "approval.requested",
+            "predicted": []
+          },
+          {
+            "caseId": "docs-change-approval-1",
+            "step": 4,
+            "expected": "approval.granted",
+            "predicted": []
+          },
+          {
+            "caseId": "docs-change-approval-1",
+            "step": 5,
+            "expected": "task.completed",
+            "predicted": []
+          }
+        ],
+        "research": {
+          "support": {
+            "matchedSteps": 10,
+            "unmatchedSteps": 10,
+            "averageCandidateCount": 0.5,
+            "averageTotalSupport": 0.5,
+            "averageTopCandidateSupport": 0.5,
+            "averageMatchedOrder": 1.4,
+            "averageGraphStates": 59.45,
+            "minGraphStates": 49,
+            "maxGraphStates": 68
+          },
+          "matchBreakdown": [
+            {
+              "mode": "none",
+              "matchedOrder": 0,
+              "occurrences": 10,
+              "share": 0.5
+            },
+            {
+              "mode": "raw",
+              "matchedOrder": 1,
+              "occurrences": 4,
+              "share": 0.2
+            },
+            {
+              "mode": "projected",
+              "matchedOrder": 2,
+              "occurrences": 2,
+              "share": 0.1
+            },
+            {
+              "mode": "raw",
+              "matchedOrder": 2,
+              "occurrences": 2,
+              "share": 0.1
+            },
+            {
+              "mode": "projected",
+              "matchedOrder": 1,
+              "occurrences": 2,
+              "share": 0.1
+            }
+          ],
+          "risks": {
+            "evaluatedSteps": 2,
+            "expectedRiskCount": 3,
+            "predictedRiskCount": 0,
+            "truePositiveCount": 0,
+            "falsePositiveCount": 0,
+            "falseNegativeCount": 3,
+            "precision": null,
+            "recall": 0,
+            "misses": [
+              {
+                "caseId": "incident-config-recovery-1",
+                "step": 3,
+                "expectedRisks": [
+                  "patch.applied"
+                ],
+                "predictedRisks": []
+              },
+              {
+                "caseId": "incident-config-recovery-2",
+                "step": 3,
+                "expectedRisks": [
+                  "patch.applied",
+                  "redeploy"
+                ],
+                "predictedRisks": []
+              }
+            ],
+            "falsePositives": []
+          }
+        }
+      },
+      {
+        "stateStrategy": "family-procedure",
+        "dataset": {
+          "name": "openclaw-realish",
+          "description": "Starter real-world-like workflow traces for incident response, code repair, docs work, and research flows.",
+          "path": "fixtures/validation/openclaw-realish.json",
+          "format": "json",
+          "split": null
+        },
+        "cases": 4,
+        "datasetEvents": 24,
+        "evaluatedSteps": 20,
+        "nextTop1Accuracy": 0.2,
+        "nextTopKAccuracy": 0.2,
+        "topK": 3,
+        "missCount": 16,
+        "eventBreakdown": [
+          {
+            "event": "task.completed",
+            "occurrences": 3,
+            "top1Hits": 0,
+            "topKHits": 0,
+            "top1Accuracy": 0,
+            "topKAccuracy": 0
+          },
+          {
+            "event": "patch.applied",
+            "occurrences": 2,
+            "top1Hits": 0,
+            "topKHits": 0,
+            "top1Accuracy": 0,
+            "topKAccuracy": 0
+          },
+          {
+            "event": "logs.inspected",
+            "occurrences": 2,
+            "top1Hits": 2,
+            "topKHits": 2,
+            "top1Accuracy": 1,
+            "topKAccuracy": 1
+          },
+          {
+            "event": "repo.inspected",
+            "occurrences": 2,
+            "top1Hits": 2,
+            "topKHits": 2,
+            "top1Accuracy": 1,
+            "topKAccuracy": 1
+          },
+          {
+            "event": "approval.granted",
+            "occurrences": 1,
+            "top1Hits": 0,
+            "topKHits": 0,
+            "top1Accuracy": 0,
+            "topKAccuracy": 0
+          },
+          {
+            "event": "approval.requested",
+            "occurrences": 1,
+            "top1Hits": 0,
+            "topKHits": 0,
+            "top1Accuracy": 0,
+            "topKAccuracy": 0
+          },
+          {
+            "event": "docs.updated",
+            "occurrences": 1,
+            "top1Hits": 0,
+            "topKHits": 0,
+            "top1Accuracy": 0,
+            "topKAccuracy": 0
+          },
+          {
+            "event": "env.diff.checked",
+            "occurrences": 1,
+            "top1Hits": 0,
+            "topKHits": 0,
+            "top1Accuracy": 0,
+            "topKAccuracy": 0
+          },
+          {
+            "event": "redeploy.triggered",
+            "occurrences": 1,
+            "top1Hits": 0,
+            "topKHits": 0,
+            "top1Accuracy": 0,
+            "topKAccuracy": 0
+          },
+          {
+            "event": "secret.rotation.confirmed",
+            "occurrences": 1,
+            "top1Hits": 0,
+            "topKHits": 0,
+            "top1Accuracy": 0,
+            "topKAccuracy": 0
+          },
+          {
+            "event": "task.failed",
+            "occurrences": 1,
+            "top1Hits": 0,
+            "topKHits": 0,
+            "top1Accuracy": 0,
+            "topKAccuracy": 0
+          },
+          {
+            "event": "tests.passed",
+            "occurrences": 1,
+            "top1Hits": 0,
+            "topKHits": 0,
+            "top1Accuracy": 0,
+            "topKAccuracy": 0
+          },
+          {
+            "event": "tests.run",
+            "occurrences": 1,
+            "top1Hits": 0,
+            "topKHits": 0,
+            "top1Accuracy": 0,
+            "topKAccuracy": 0
+          },
+          {
+            "event": "webhook.replayed",
+            "occurrences": 1,
+            "top1Hits": 0,
+            "topKHits": 0,
+            "top1Accuracy": 0,
+            "topKAccuracy": 0
+          },
+          {
+            "event": "webhook.still-failing",
+            "occurrences": 1,
+            "top1Hits": 0,
+            "topKHits": 0,
+            "top1Accuracy": 0,
+            "topKAccuracy": 0
+          }
+        ],
+        "misses": [
+          {
+            "caseId": "incident-config-recovery-1",
+            "step": 2,
+            "expected": "env.diff.checked",
+            "predicted": [
+              "patch.applied"
+            ]
+          },
+          {
+            "caseId": "incident-config-recovery-1",
+            "step": 3,
+            "expected": "secret.rotation.confirmed",
+            "predicted": []
+          },
+          {
+            "caseId": "incident-config-recovery-1",
+            "step": 4,
+            "expected": "webhook.replayed",
+            "predicted": []
+          },
+          {
+            "caseId": "incident-config-recovery-1",
+            "step": 5,
+            "expected": "task.completed",
+            "predicted": []
+          },
+          {
+            "caseId": "incident-config-recovery-2",
+            "step": 2,
+            "expected": "patch.applied",
+            "predicted": [
+              "env.diff.checked"
+            ]
+          },
+          {
+            "caseId": "incident-config-recovery-2",
+            "step": 3,
+            "expected": "redeploy.triggered",
+            "predicted": [
+              "tests.passed"
+            ]
+          },
+          {
+            "caseId": "incident-config-recovery-2",
+            "step": 4,
+            "expected": "webhook.still-failing",
+            "predicted": []
+          },
+          {
+            "caseId": "incident-config-recovery-2",
+            "step": 5,
+            "expected": "task.failed",
+            "predicted": []
+          },
+          {
+            "caseId": "code-fix-test-loop-1",
+            "step": 2,
+            "expected": "tests.run",
+            "predicted": [
+              "docs.updated"
+            ]
+          },
+          {
+            "caseId": "code-fix-test-loop-1",
+            "step": 3,
+            "expected": "patch.applied",
+            "predicted": []
+          },
+          {
+            "caseId": "code-fix-test-loop-1",
+            "step": 4,
+            "expected": "tests.passed",
+            "predicted": [
+              "redeploy.triggered"
+            ]
+          },
+          {
+            "caseId": "code-fix-test-loop-1",
+            "step": 5,
+            "expected": "task.completed",
+            "predicted": []
+          },
+          {
+            "caseId": "docs-change-approval-1",
+            "step": 2,
+            "expected": "docs.updated",
+            "predicted": [
+              "tests.run"
+            ]
+          },
+          {
+            "caseId": "docs-change-approval-1",
+            "step": 3,
+            "expected": "approval.requested",
+            "predicted": []
+          },
+          {
+            "caseId": "docs-change-approval-1",
+            "step": 4,
+            "expected": "approval.granted",
+            "predicted": []
+          },
+          {
+            "caseId": "docs-change-approval-1",
+            "step": 5,
+            "expected": "task.completed",
+            "predicted": []
+          }
+        ],
+        "research": {
+          "support": {
+            "matchedSteps": 10,
+            "unmatchedSteps": 10,
+            "averageCandidateCount": 0.5,
+            "averageTotalSupport": 0.5,
+            "averageTopCandidateSupport": 0.5,
+            "averageMatchedOrder": 1.4,
+            "averageGraphStates": 59.45,
+            "minGraphStates": 49,
+            "maxGraphStates": 68
+          },
+          "matchBreakdown": [
+            {
+              "mode": "none",
+              "matchedOrder": 0,
+              "occurrences": 10,
+              "share": 0.5
+            },
+            {
+              "mode": "raw",
+              "matchedOrder": 1,
+              "occurrences": 4,
+              "share": 0.2
+            },
+            {
+              "mode": "projected",
+              "matchedOrder": 2,
+              "occurrences": 2,
+              "share": 0.1
+            },
+            {
+              "mode": "raw",
+              "matchedOrder": 2,
+              "occurrences": 2,
+              "share": 0.1
+            },
+            {
+              "mode": "projected",
+              "matchedOrder": 1,
+              "occurrences": 2,
+              "share": 0.1
+            }
+          ],
+          "risks": {
+            "evaluatedSteps": 2,
+            "expectedRiskCount": 3,
+            "predictedRiskCount": 0,
+            "truePositiveCount": 0,
+            "falsePositiveCount": 0,
+            "falseNegativeCount": 3,
+            "precision": null,
+            "recall": 0,
+            "misses": [
+              {
+                "caseId": "incident-config-recovery-1",
+                "step": 3,
+                "expectedRisks": [
+                  "patch.applied"
+                ],
+                "predictedRisks": []
+              },
+              {
+                "caseId": "incident-config-recovery-2",
+                "step": 3,
+                "expectedRisks": [
+                  "patch.applied",
+                  "redeploy"
+                ],
+                "predictedRisks": []
+              }
+            ],
+            "falsePositives": []
+          }
+        }
+      }
+    ],
+    "bestByAccuracy": {
+      "stateStrategy": "raw",
+      "nextTop1Accuracy": 0.2,
+      "nextTopKAccuracy": 0.2,
+      "missCount": 16
+    },
+    "bestByRiskRecall": {
+      "stateStrategy": "raw",
+      "precision": null,
+      "recall": 0,
+      "expectedRiskCount": 3,
+      "predictedRiskCount": 0
+    },
+    "bestBySupportDensity": {
+      "stateStrategy": "raw",
+      "averageTotalSupport": 0.5,
+      "averageTopCandidateSupport": 0.5,
+      "averageGraphStates": 47.2
+    }
+  },
+  "baselines": {
+    "baselines": [
+      {
+        "baseline": "global-majority",
+        "description": "Predicts globally frequent next events from training traces, ignoring current state.",
+        "dataset": {
+          "name": "openclaw-realish",
+          "description": "Starter real-world-like workflow traces for incident response, code repair, docs work, and research flows.",
+          "path": "fixtures/validation/openclaw-realish.json",
+          "format": "json",
+          "split": null
+        },
+        "cases": 4,
+        "datasetEvents": 24,
+        "evaluatedSteps": 20,
+        "nextTop1Accuracy": 0,
+        "nextTopKAccuracy": 0.15,
+        "topK": 3,
+        "missCount": 17,
+        "misses": [
+          {
+            "caseId": "incident-config-recovery-1",
+            "step": 1,
+            "expected": "logs.inspected",
+            "predicted": [
+              "patch.applied",
+              "repo.inspected",
+              "task.completed"
+            ]
+          },
+          {
+            "caseId": "incident-config-recovery-1",
+            "step": 2,
+            "expected": "env.diff.checked",
+            "predicted": [
+              "patch.applied",
+              "repo.inspected",
+              "task.completed"
+            ]
+          },
+          {
+            "caseId": "incident-config-recovery-1",
+            "step": 3,
+            "expected": "secret.rotation.confirmed",
+            "predicted": [
+              "patch.applied",
+              "repo.inspected",
+              "task.completed"
+            ]
+          },
+          {
+            "caseId": "incident-config-recovery-1",
+            "step": 4,
+            "expected": "webhook.replayed",
+            "predicted": [
+              "patch.applied",
+              "repo.inspected",
+              "task.completed"
+            ]
+          },
+          {
+            "caseId": "incident-config-recovery-2",
+            "step": 1,
+            "expected": "logs.inspected",
+            "predicted": [
+              "task.completed",
+              "repo.inspected",
+              "approval.granted"
+            ]
+          },
+          {
+            "caseId": "incident-config-recovery-2",
+            "step": 2,
+            "expected": "patch.applied",
+            "predicted": [
+              "task.completed",
+              "repo.inspected",
+              "approval.granted"
+            ]
+          },
+          {
+            "caseId": "incident-config-recovery-2",
+            "step": 3,
+            "expected": "redeploy.triggered",
+            "predicted": [
+              "task.completed",
+              "repo.inspected",
+              "approval.granted"
+            ]
+          },
+          {
+            "caseId": "incident-config-recovery-2",
+            "step": 4,
+            "expected": "webhook.still-failing",
+            "predicted": [
+              "task.completed",
+              "repo.inspected",
+              "approval.granted"
+            ]
+          },
+          {
+            "caseId": "incident-config-recovery-2",
+            "step": 5,
+            "expected": "task.failed",
+            "predicted": [
+              "task.completed",
+              "repo.inspected",
+              "approval.granted"
+            ]
+          },
+          {
+            "caseId": "code-fix-test-loop-1",
+            "step": 1,
+            "expected": "repo.inspected",
+            "predicted": [
+              "logs.inspected",
+              "task.completed",
+              "approval.granted"
+            ]
+          },
+          {
+            "caseId": "code-fix-test-loop-1",
+            "step": 2,
+            "expected": "tests.run",
+            "predicted": [
+              "logs.inspected",
+              "task.completed",
+              "approval.granted"
+            ]
+          },
+          {
+            "caseId": "code-fix-test-loop-1",
+            "step": 3,
+            "expected": "patch.applied",
+            "predicted": [
+              "logs.inspected",
+              "task.completed",
+              "approval.granted"
+            ]
+          },
+          {
+            "caseId": "code-fix-test-loop-1",
+            "step": 4,
+            "expected": "tests.passed",
+            "predicted": [
+              "logs.inspected",
+              "task.completed",
+              "approval.granted"
+            ]
+          },
+          {
+            "caseId": "docs-change-approval-1",
+            "step": 1,
+            "expected": "repo.inspected",
+            "predicted": [
+              "logs.inspected",
+              "patch.applied",
+              "task.completed"
+            ]
+          },
+          {
+            "caseId": "docs-change-approval-1",
+            "step": 2,
+            "expected": "docs.updated",
+            "predicted": [
+              "logs.inspected",
+              "patch.applied",
+              "task.completed"
+            ]
+          },
+          {
+            "caseId": "docs-change-approval-1",
+            "step": 3,
+            "expected": "approval.requested",
+            "predicted": [
+              "logs.inspected",
+              "patch.applied",
+              "task.completed"
+            ]
+          },
+          {
+            "caseId": "docs-change-approval-1",
+            "step": 4,
+            "expected": "approval.granted",
+            "predicted": [
+              "logs.inspected",
+              "patch.applied",
+              "task.completed"
+            ]
+          }
+        ],
+        "risks": {
+          "evaluatedSteps": 2,
+          "expectedRiskCount": 3,
+          "predictedRiskCount": 0,
+          "truePositiveCount": 0,
+          "falsePositiveCount": 0,
+          "falseNegativeCount": 3,
+          "precision": null,
+          "recall": 0,
+          "misses": [
+            {
+              "caseId": "incident-config-recovery-1",
+              "step": 3,
+              "expectedRisks": [
+                "patch.applied"
+              ],
+              "predictedRisks": []
+            },
+            {
+              "caseId": "incident-config-recovery-2",
+              "step": 3,
+              "expectedRisks": [
+                "patch.applied",
+                "redeploy"
+              ],
+              "predictedRisks": []
+            }
+          ],
+          "falsePositives": []
+        }
+      },
+      {
+        "baseline": "raw-ngram",
+        "description": "Predicts next events from exact raw event suffixes with shorter-suffix backoff.",
+        "dataset": {
+          "name": "openclaw-realish",
+          "description": "Starter real-world-like workflow traces for incident response, code repair, docs work, and research flows.",
+          "path": "fixtures/validation/openclaw-realish.json",
+          "format": "json",
+          "split": null
+        },
+        "cases": 4,
+        "datasetEvents": 24,
+        "evaluatedSteps": 20,
+        "nextTop1Accuracy": 0.2,
+        "nextTopKAccuracy": 0.35,
+        "topK": 3,
+        "missCount": 13,
+        "misses": [
+          {
+            "caseId": "incident-config-recovery-1",
+            "step": 2,
+            "expected": "env.diff.checked",
+            "predicted": [
+              "patch.applied"
+            ]
+          },
+          {
+            "caseId": "incident-config-recovery-1",
+            "step": 3,
+            "expected": "secret.rotation.confirmed",
+            "predicted": [
+              "patch.applied",
+              "repo.inspected",
+              "task.completed"
+            ]
+          },
+          {
+            "caseId": "incident-config-recovery-1",
+            "step": 4,
+            "expected": "webhook.replayed",
+            "predicted": [
+              "patch.applied",
+              "repo.inspected",
+              "task.completed"
+            ]
+          },
+          {
+            "caseId": "incident-config-recovery-2",
+            "step": 2,
+            "expected": "patch.applied",
+            "predicted": [
+              "env.diff.checked"
+            ]
+          },
+          {
+            "caseId": "incident-config-recovery-2",
+            "step": 3,
+            "expected": "redeploy.triggered",
+            "predicted": [
+              "tests.passed"
+            ]
+          },
+          {
+            "caseId": "incident-config-recovery-2",
+            "step": 4,
+            "expected": "webhook.still-failing",
+            "predicted": [
+              "task.completed",
+              "repo.inspected",
+              "approval.granted"
+            ]
+          },
+          {
+            "caseId": "incident-config-recovery-2",
+            "step": 5,
+            "expected": "task.failed",
+            "predicted": [
+              "task.completed",
+              "repo.inspected",
+              "approval.granted"
+            ]
+          },
+          {
+            "caseId": "code-fix-test-loop-1",
+            "step": 2,
+            "expected": "tests.run",
+            "predicted": [
+              "docs.updated"
+            ]
+          },
+          {
+            "caseId": "code-fix-test-loop-1",
+            "step": 3,
+            "expected": "patch.applied",
+            "predicted": [
+              "logs.inspected",
+              "task.completed",
+              "approval.granted"
+            ]
+          },
+          {
+            "caseId": "code-fix-test-loop-1",
+            "step": 4,
+            "expected": "tests.passed",
+            "predicted": [
+              "redeploy.triggered"
+            ]
+          },
+          {
+            "caseId": "docs-change-approval-1",
+            "step": 2,
+            "expected": "docs.updated",
+            "predicted": [
+              "tests.run"
+            ]
+          },
+          {
+            "caseId": "docs-change-approval-1",
+            "step": 3,
+            "expected": "approval.requested",
+            "predicted": [
+              "logs.inspected",
+              "patch.applied",
+              "task.completed"
+            ]
+          },
+          {
+            "caseId": "docs-change-approval-1",
+            "step": 4,
+            "expected": "approval.granted",
+            "predicted": [
+              "logs.inspected",
+              "patch.applied",
+              "task.completed"
+            ]
+          }
+        ],
+        "risks": {
+          "evaluatedSteps": 2,
+          "expectedRiskCount": 3,
+          "predictedRiskCount": 0,
+          "truePositiveCount": 0,
+          "falsePositiveCount": 0,
+          "falseNegativeCount": 3,
+          "precision": null,
+          "recall": 0,
+          "misses": [
+            {
+              "caseId": "incident-config-recovery-1",
+              "step": 3,
+              "expectedRisks": [
+                "patch.applied"
+              ],
+              "predictedRisks": []
+            },
+            {
+              "caseId": "incident-config-recovery-2",
+              "step": 3,
+              "expectedRisks": [
+                "patch.applied",
+                "redeploy"
+              ],
+              "predictedRisks": []
+            }
+          ],
+          "falsePositives": []
+        }
+      },
+      {
+        "baseline": "workflow-class-ngram",
+        "description": "Predicts from raw suffixes using only training traces with the same annotated workflow class when possible.",
+        "dataset": {
+          "name": "openclaw-realish",
+          "description": "Starter real-world-like workflow traces for incident response, code repair, docs work, and research flows.",
+          "path": "fixtures/validation/openclaw-realish.json",
+          "format": "json",
+          "split": null
+        },
+        "cases": 4,
+        "datasetEvents": 24,
+        "evaluatedSteps": 20,
+        "nextTop1Accuracy": 0.2,
+        "nextTopKAccuracy": 0.3,
+        "topK": 3,
+        "missCount": 14,
+        "misses": [
+          {
+            "caseId": "incident-config-recovery-1",
+            "step": 2,
+            "expected": "env.diff.checked",
+            "predicted": [
+              "patch.applied"
+            ]
+          },
+          {
+            "caseId": "incident-config-recovery-1",
+            "step": 3,
+            "expected": "secret.rotation.confirmed",
+            "predicted": [
+              "logs.inspected",
+              "patch.applied",
+              "redeploy.triggered"
+            ]
+          },
+          {
+            "caseId": "incident-config-recovery-1",
+            "step": 4,
+            "expected": "webhook.replayed",
+            "predicted": [
+              "logs.inspected",
+              "patch.applied",
+              "redeploy.triggered"
+            ]
+          },
+          {
+            "caseId": "incident-config-recovery-1",
+            "step": 5,
+            "expected": "task.completed",
+            "predicted": [
+              "logs.inspected",
+              "patch.applied",
+              "redeploy.triggered"
+            ]
+          },
+          {
+            "caseId": "incident-config-recovery-2",
+            "step": 2,
+            "expected": "patch.applied",
+            "predicted": [
+              "env.diff.checked"
+            ]
+          },
+          {
+            "caseId": "incident-config-recovery-2",
+            "step": 3,
+            "expected": "redeploy.triggered",
+            "predicted": [
+              "env.diff.checked",
+              "logs.inspected",
+              "secret.rotation.confirmed"
+            ]
+          },
+          {
+            "caseId": "incident-config-recovery-2",
+            "step": 4,
+            "expected": "webhook.still-failing",
+            "predicted": [
+              "env.diff.checked",
+              "logs.inspected",
+              "secret.rotation.confirmed"
+            ]
+          },
+          {
+            "caseId": "incident-config-recovery-2",
+            "step": 5,
+            "expected": "task.failed",
+            "predicted": [
+              "env.diff.checked",
+              "logs.inspected",
+              "secret.rotation.confirmed"
+            ]
+          },
+          {
+            "caseId": "code-fix-test-loop-1",
+            "step": 2,
+            "expected": "tests.run",
+            "predicted": [
+              "docs.updated"
+            ]
+          },
+          {
+            "caseId": "code-fix-test-loop-1",
+            "step": 3,
+            "expected": "patch.applied",
+            "predicted": [
+              "logs.inspected",
+              "task.completed",
+              "approval.granted"
+            ]
+          },
+          {
+            "caseId": "code-fix-test-loop-1",
+            "step": 4,
+            "expected": "tests.passed",
+            "predicted": [
+              "redeploy.triggered"
+            ]
+          },
+          {
+            "caseId": "docs-change-approval-1",
+            "step": 2,
+            "expected": "docs.updated",
+            "predicted": [
+              "tests.run"
+            ]
+          },
+          {
+            "caseId": "docs-change-approval-1",
+            "step": 3,
+            "expected": "approval.requested",
+            "predicted": [
+              "logs.inspected",
+              "patch.applied",
+              "task.completed"
+            ]
+          },
+          {
+            "caseId": "docs-change-approval-1",
+            "step": 4,
+            "expected": "approval.granted",
+            "predicted": [
+              "logs.inspected",
+              "patch.applied",
+              "task.completed"
+            ]
+          }
+        ],
+        "risks": {
+          "evaluatedSteps": 2,
+          "expectedRiskCount": 3,
+          "predictedRiskCount": 3,
+          "truePositiveCount": 2,
+          "falsePositiveCount": 1,
+          "falseNegativeCount": 1,
+          "precision": 0.667,
+          "recall": 0.667,
+          "misses": [
+            {
+              "caseId": "incident-config-recovery-2",
+              "step": 3,
+              "expectedRisks": [
+                "patch.applied",
+                "redeploy"
+              ],
+              "predictedRisks": [
+                "patch.applied"
+              ]
+            }
+          ],
+          "falsePositives": [
+            {
+              "caseId": "incident-config-recovery-1",
+              "step": 3,
+              "expectedRisks": [
+                "patch.applied"
+              ],
+              "predictedRisks": [
+                "patch.applied",
+                "redeploy"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "baseline": "semantic-rag-lite",
+        "description": "Retrieves lexically similar training prefixes from source traces, annotations, projections, and event histories.",
+        "dataset": {
+          "name": "openclaw-realish",
+          "description": "Starter real-world-like workflow traces for incident response, code repair, docs work, and research flows.",
+          "path": "fixtures/validation/openclaw-realish.json",
+          "format": "json",
+          "split": null
+        },
+        "cases": 4,
+        "datasetEvents": 24,
+        "evaluatedSteps": 20,
+        "nextTop1Accuracy": 0.05,
+        "nextTopKAccuracy": 0.3,
+        "topK": 3,
+        "missCount": 14,
+        "misses": [
+          {
+            "caseId": "incident-config-recovery-1",
+            "step": 2,
+            "expected": "env.diff.checked",
+            "predicted": [
+              "patch.applied",
+              "redeploy.triggered",
+              "webhook.still-failing"
+            ]
+          },
+          {
+            "caseId": "incident-config-recovery-1",
+            "step": 3,
+            "expected": "secret.rotation.confirmed",
+            "predicted": [
+              "patch.applied",
+              "redeploy.triggered",
+              "webhook.still-failing"
+            ]
+          },
+          {
+            "caseId": "incident-config-recovery-1",
+            "step": 4,
+            "expected": "webhook.replayed",
+            "predicted": [
+              "patch.applied",
+              "redeploy.triggered",
+              "webhook.still-failing"
+            ]
+          },
+          {
+            "caseId": "incident-config-recovery-1",
+            "step": 5,
+            "expected": "task.completed",
+            "predicted": [
+              "patch.applied",
+              "redeploy.triggered",
+              "task.failed"
+            ]
+          },
+          {
+            "caseId": "incident-config-recovery-2",
+            "step": 2,
+            "expected": "patch.applied",
+            "predicted": [
+              "task.completed",
+              "env.diff.checked",
+              "secret.rotation.confirmed"
+            ]
+          },
+          {
+            "caseId": "incident-config-recovery-2",
+            "step": 3,
+            "expected": "redeploy.triggered",
+            "predicted": [
+              "task.completed",
+              "env.diff.checked",
+              "secret.rotation.confirmed"
+            ]
+          },
+          {
+            "caseId": "incident-config-recovery-2",
+            "step": 4,
+            "expected": "webhook.still-failing",
+            "predicted": [
+              "task.completed",
+              "env.diff.checked",
+              "secret.rotation.confirmed"
+            ]
+          },
+          {
+            "caseId": "incident-config-recovery-2",
+            "step": 5,
+            "expected": "task.failed",
+            "predicted": [
+              "task.completed",
+              "env.diff.checked",
+              "secret.rotation.confirmed"
+            ]
+          },
+          {
+            "caseId": "code-fix-test-loop-1",
+            "step": 2,
+            "expected": "tests.run",
+            "predicted": [
+              "task.completed",
+              "docs.updated",
+              "approval.requested"
+            ]
+          },
+          {
+            "caseId": "code-fix-test-loop-1",
+            "step": 3,
+            "expected": "patch.applied",
+            "predicted": [
+              "task.completed",
+              "docs.updated",
+              "approval.requested"
+            ]
+          },
+          {
+            "caseId": "code-fix-test-loop-1",
+            "step": 4,
+            "expected": "tests.passed",
+            "predicted": [
+              "task.completed",
+              "docs.updated",
+              "approval.requested"
+            ]
+          },
+          {
+            "caseId": "docs-change-approval-1",
+            "step": 2,
+            "expected": "docs.updated",
+            "predicted": [
+              "patch.applied",
+              "task.completed",
+              "tests.run"
+            ]
+          },
+          {
+            "caseId": "docs-change-approval-1",
+            "step": 3,
+            "expected": "approval.requested",
+            "predicted": [
+              "patch.applied",
+              "task.completed",
+              "tests.run"
+            ]
+          },
+          {
+            "caseId": "docs-change-approval-1",
+            "step": 4,
+            "expected": "approval.granted",
+            "predicted": [
+              "patch.applied",
+              "task.completed",
+              "tests.run"
+            ]
+          }
+        ],
+        "risks": {
+          "evaluatedSteps": 2,
+          "expectedRiskCount": 3,
+          "predictedRiskCount": 0,
+          "truePositiveCount": 0,
+          "falsePositiveCount": 0,
+          "falseNegativeCount": 3,
+          "precision": null,
+          "recall": 0,
+          "misses": [
+            {
+              "caseId": "incident-config-recovery-1",
+              "step": 3,
+              "expectedRisks": [
+                "patch.applied"
+              ],
+              "predictedRisks": []
+            },
+            {
+              "caseId": "incident-config-recovery-2",
+              "step": 3,
+              "expectedRisks": [
+                "patch.applied",
+                "redeploy"
+              ],
+              "predictedRisks": []
+            }
+          ],
+          "falsePositives": []
+        }
+      },
+      {
+        "baseline": "textual-lesson-prior",
+        "description": "Predicts from workflow-class and last-event lessons extracted from successful training traces.",
+        "dataset": {
+          "name": "openclaw-realish",
+          "description": "Starter real-world-like workflow traces for incident response, code repair, docs work, and research flows.",
+          "path": "fixtures/validation/openclaw-realish.json",
+          "format": "json",
+          "split": null
+        },
+        "cases": 4,
+        "datasetEvents": 24,
+        "evaluatedSteps": 20,
+        "nextTop1Accuracy": 0.1,
+        "nextTopKAccuracy": 0.2,
+        "topK": 3,
+        "missCount": 16,
+        "misses": [
+          {
+            "caseId": "incident-config-recovery-1",
+            "step": 2,
+            "expected": "env.diff.checked",
+            "predicted": [
+              "patch.applied"
+            ]
+          },
+          {
+            "caseId": "incident-config-recovery-1",
+            "step": 3,
+            "expected": "secret.rotation.confirmed",
+            "predicted": [
+              "logs.inspected",
+              "patch.applied",
+              "redeploy.triggered"
+            ]
+          },
+          {
+            "caseId": "incident-config-recovery-1",
+            "step": 4,
+            "expected": "webhook.replayed",
+            "predicted": [
+              "logs.inspected",
+              "patch.applied",
+              "redeploy.triggered"
+            ]
+          },
+          {
+            "caseId": "incident-config-recovery-1",
+            "step": 5,
+            "expected": "task.completed",
+            "predicted": [
+              "logs.inspected",
+              "patch.applied",
+              "redeploy.triggered"
+            ]
+          },
+          {
+            "caseId": "incident-config-recovery-2",
+            "step": 2,
+            "expected": "patch.applied",
+            "predicted": [
+              "env.diff.checked"
+            ]
+          },
+          {
+            "caseId": "incident-config-recovery-2",
+            "step": 3,
+            "expected": "redeploy.triggered",
+            "predicted": [
+              "env.diff.checked",
+              "logs.inspected",
+              "secret.rotation.confirmed"
+            ]
+          },
+          {
+            "caseId": "incident-config-recovery-2",
+            "step": 4,
+            "expected": "webhook.still-failing",
+            "predicted": [
+              "env.diff.checked",
+              "logs.inspected",
+              "secret.rotation.confirmed"
+            ]
+          },
+          {
+            "caseId": "incident-config-recovery-2",
+            "step": 5,
+            "expected": "task.failed",
+            "predicted": [
+              "env.diff.checked",
+              "logs.inspected",
+              "secret.rotation.confirmed"
+            ]
+          },
+          {
+            "caseId": "code-fix-test-loop-1",
+            "step": 1,
+            "expected": "repo.inspected",
+            "predicted": [
+              "logs.inspected",
+              "task.completed",
+              "approval.granted"
+            ]
+          },
+          {
+            "caseId": "code-fix-test-loop-1",
+            "step": 2,
+            "expected": "tests.run",
+            "predicted": [
+              "logs.inspected",
+              "task.completed",
+              "approval.granted"
+            ]
+          },
+          {
+            "caseId": "code-fix-test-loop-1",
+            "step": 3,
+            "expected": "patch.applied",
+            "predicted": [
+              "logs.inspected",
+              "task.completed",
+              "approval.granted"
+            ]
+          },
+          {
+            "caseId": "code-fix-test-loop-1",
+            "step": 4,
+            "expected": "tests.passed",
+            "predicted": [
+              "logs.inspected",
+              "task.completed",
+              "approval.granted"
+            ]
+          },
+          {
+            "caseId": "docs-change-approval-1",
+            "step": 1,
+            "expected": "repo.inspected",
+            "predicted": [
+              "logs.inspected",
+              "patch.applied",
+              "task.completed"
+            ]
+          },
+          {
+            "caseId": "docs-change-approval-1",
+            "step": 2,
+            "expected": "docs.updated",
+            "predicted": [
+              "logs.inspected",
+              "patch.applied",
+              "task.completed"
+            ]
+          },
+          {
+            "caseId": "docs-change-approval-1",
+            "step": 3,
+            "expected": "approval.requested",
+            "predicted": [
+              "logs.inspected",
+              "patch.applied",
+              "task.completed"
+            ]
+          },
+          {
+            "caseId": "docs-change-approval-1",
+            "step": 4,
+            "expected": "approval.granted",
+            "predicted": [
+              "logs.inspected",
+              "patch.applied",
+              "task.completed"
+            ]
+          }
+        ],
+        "risks": {
+          "evaluatedSteps": 2,
+          "expectedRiskCount": 3,
+          "predictedRiskCount": 0,
+          "truePositiveCount": 0,
+          "falsePositiveCount": 0,
+          "falseNegativeCount": 3,
+          "precision": null,
+          "recall": 0,
+          "misses": [
+            {
+              "caseId": "incident-config-recovery-1",
+              "step": 3,
+              "expectedRisks": [
+                "patch.applied"
+              ],
+              "predictedRisks": []
+            },
+            {
+              "caseId": "incident-config-recovery-2",
+              "step": 3,
+              "expectedRisks": [
+                "patch.applied",
+                "redeploy"
+              ],
+              "predictedRisks": []
+            }
+          ],
+          "falsePositives": []
+        }
+      }
+    ],
+    "bestByAccuracy": {
+      "baseline": "raw-ngram",
+      "nextTop1Accuracy": 0.2,
+      "nextTopKAccuracy": 0.35,
+      "missCount": 13
+    },
+    "bestByRiskRecall": {
+      "baseline": "workflow-class-ngram",
+      "precision": 0.667,
+      "recall": 0.667,
+      "expectedRiskCount": 3,
+      "predictedRiskCount": 3
+    }
+  },
+  "claims": [
+    {
+      "id": "H1",
+      "claim": "Raw procedural recurrence exists.",
+      "decision": "supported",
+      "evidence": "raw top-k=0.200, global-majority top-k=0.150",
+      "nextAction": "Keep raw suffix as a serious baseline for every iteration."
+    },
+    {
+      "id": "H2",
+      "claim": "Semantic procedural abstraction improves or preserves generalization over raw suffixes.",
+      "decision": "supported",
+      "evidence": "raw top-1/top-k=0.200/0.200, family-procedure top-1/top-k=0.200/0.200",
+      "nextAction": "Continue testing whether abstraction improves risk, explanation, or support density."
+    },
+    {
+      "id": "H3",
+      "claim": "Structured graph memory beats non-Sherpa sequence baselines under the current offline objective.",
+      "decision": "rejected",
+      "evidence": "best Sherpa=raw top-k=0.200, best baseline=raw-ngram top-k=0.350",
+      "nextAction": "Treat current graph retrieval as unproven; compare against stronger and weaker baselines before making claims."
+    },
+    {
+      "id": "H4",
+      "claim": "Sparse advice improves behavior without meaningful harm.",
+      "decision": "pending",
+      "evidence": "offline annotated risk recall=0.000; sandbox intervention evidence still required",
+      "nextAction": "Run Docker sandbox suites in shadow and advisory modes, then compare task outcomes, harm, and advice counts."
+    },
+    {
+      "id": "H5",
+      "claim": "Procedural memory transfers across repos, task families, agents, or frameworks.",
+      "decision": "pending",
+      "evidence": "procedure top-k=0.200; cross-domain held-out splits are not yet evaluated",
+      "nextAction": "Add explicit cross-family and cross-repo splits before making transfer claims."
+    }
+  ]
+}

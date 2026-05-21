@@ -1,0 +1,428 @@
+{
+  "baselines": [
+    {
+      "baseline": "global-majority",
+      "description": "Predicts globally frequent next events from training traces, ignoring current state.",
+      "dataset": {
+        "name": "synthetic-workflows",
+        "description": "Small synthetic workflow corpus for next-step validation across code, docs, and blocked task branches.",
+        "path": "fixtures/validation/synthetic-workflows.json",
+        "format": "json",
+        "split": null
+      },
+      "cases": 6,
+      "datasetEvents": 30,
+      "evaluatedSteps": 24,
+      "nextTop1Accuracy": 0.25,
+      "nextTopKAccuracy": 0.4166666666666667,
+      "topK": 3,
+      "missCount": 14,
+      "misses": [
+        {
+          "caseId": "fix-success-1",
+          "step": 2,
+          "expected": "tests.run",
+          "predicted": [
+            "repo.inspected",
+            "task.completed",
+            "env.blocked"
+          ]
+        },
+        {
+          "caseId": "fix-success-1",
+          "step": 3,
+          "expected": "patch.applied",
+          "predicted": [
+            "repo.inspected",
+            "task.completed",
+            "env.blocked"
+          ]
+        },
+        {
+          "caseId": "fix-success-1",
+          "step": 4,
+          "expected": "tests.passed",
+          "predicted": [
+            "repo.inspected",
+            "task.completed",
+            "env.blocked"
+          ]
+        },
+        {
+          "caseId": "fix-success-2",
+          "step": 2,
+          "expected": "tests.run",
+          "predicted": [
+            "repo.inspected",
+            "task.completed",
+            "env.blocked"
+          ]
+        },
+        {
+          "caseId": "fix-success-2",
+          "step": 3,
+          "expected": "patch.applied",
+          "predicted": [
+            "repo.inspected",
+            "task.completed",
+            "env.blocked"
+          ]
+        },
+        {
+          "caseId": "fix-success-2",
+          "step": 4,
+          "expected": "tests.passed",
+          "predicted": [
+            "repo.inspected",
+            "task.completed",
+            "env.blocked"
+          ]
+        },
+        {
+          "caseId": "docs-success-1",
+          "step": 2,
+          "expected": "docs.updated",
+          "predicted": [
+            "repo.inspected",
+            "patch.applied",
+            "task.completed"
+          ]
+        },
+        {
+          "caseId": "fix-success-3",
+          "step": 2,
+          "expected": "tests.run",
+          "predicted": [
+            "repo.inspected",
+            "task.completed",
+            "env.blocked"
+          ]
+        },
+        {
+          "caseId": "fix-success-3",
+          "step": 3,
+          "expected": "patch.applied",
+          "predicted": [
+            "repo.inspected",
+            "task.completed",
+            "env.blocked"
+          ]
+        },
+        {
+          "caseId": "fix-success-3",
+          "step": 4,
+          "expected": "tests.passed",
+          "predicted": [
+            "repo.inspected",
+            "task.completed",
+            "env.blocked"
+          ]
+        },
+        {
+          "caseId": "blocked-1",
+          "step": 2,
+          "expected": "env.blocked",
+          "predicted": [
+            "repo.inspected",
+            "task.completed",
+            "patch.applied"
+          ]
+        },
+        {
+          "caseId": "blocked-1",
+          "step": 3,
+          "expected": "task.failed",
+          "predicted": [
+            "repo.inspected",
+            "task.completed",
+            "patch.applied"
+          ]
+        },
+        {
+          "caseId": "blocked-2",
+          "step": 2,
+          "expected": "env.blocked",
+          "predicted": [
+            "repo.inspected",
+            "task.completed",
+            "patch.applied"
+          ]
+        },
+        {
+          "caseId": "blocked-2",
+          "step": 3,
+          "expected": "task.failed",
+          "predicted": [
+            "repo.inspected",
+            "task.completed",
+            "patch.applied"
+          ]
+        }
+      ],
+      "risks": {
+        "evaluatedSteps": 0,
+        "expectedRiskCount": 0,
+        "predictedRiskCount": 0,
+        "truePositiveCount": 0,
+        "falsePositiveCount": 0,
+        "falseNegativeCount": 0,
+        "precision": null,
+        "recall": null,
+        "misses": [],
+        "falsePositives": []
+      }
+    },
+    {
+      "baseline": "raw-ngram",
+      "description": "Predicts next events from exact raw event suffixes with shorter-suffix backoff.",
+      "dataset": {
+        "name": "synthetic-workflows",
+        "description": "Small synthetic workflow corpus for next-step validation across code, docs, and blocked task branches.",
+        "path": "fixtures/validation/synthetic-workflows.json",
+        "format": "json",
+        "split": null
+      },
+      "cases": 6,
+      "datasetEvents": 30,
+      "evaluatedSteps": 24,
+      "nextTop1Accuracy": 0.7083333333333334,
+      "nextTopKAccuracy": 0.9583333333333334,
+      "topK": 3,
+      "missCount": 1,
+      "misses": [
+        {
+          "caseId": "docs-success-1",
+          "step": 2,
+          "expected": "docs.updated",
+          "predicted": [
+            "tests.run",
+            "env.blocked"
+          ]
+        }
+      ],
+      "risks": {
+        "evaluatedSteps": 0,
+        "expectedRiskCount": 0,
+        "predictedRiskCount": 0,
+        "truePositiveCount": 0,
+        "falsePositiveCount": 0,
+        "falseNegativeCount": 0,
+        "precision": null,
+        "recall": null,
+        "misses": [],
+        "falsePositives": []
+      }
+    },
+    {
+      "baseline": "workflow-class-ngram",
+      "description": "Predicts from raw suffixes using only training traces with the same annotated workflow class when possible.",
+      "dataset": {
+        "name": "synthetic-workflows",
+        "description": "Small synthetic workflow corpus for next-step validation across code, docs, and blocked task branches.",
+        "path": "fixtures/validation/synthetic-workflows.json",
+        "format": "json",
+        "split": null
+      },
+      "cases": 6,
+      "datasetEvents": 30,
+      "evaluatedSteps": 24,
+      "nextTop1Accuracy": 0.7083333333333334,
+      "nextTopKAccuracy": 0.9583333333333334,
+      "topK": 3,
+      "missCount": 1,
+      "misses": [
+        {
+          "caseId": "docs-success-1",
+          "step": 2,
+          "expected": "docs.updated",
+          "predicted": [
+            "tests.run",
+            "env.blocked"
+          ]
+        }
+      ],
+      "risks": {
+        "evaluatedSteps": 0,
+        "expectedRiskCount": 0,
+        "predictedRiskCount": 0,
+        "truePositiveCount": 0,
+        "falsePositiveCount": 0,
+        "falseNegativeCount": 0,
+        "precision": null,
+        "recall": null,
+        "misses": [],
+        "falsePositives": []
+      }
+    },
+    {
+      "baseline": "semantic-rag-lite",
+      "description": "Retrieves lexically similar training prefixes from source traces, annotations, projections, and event histories.",
+      "dataset": {
+        "name": "synthetic-workflows",
+        "description": "Small synthetic workflow corpus for next-step validation across code, docs, and blocked task branches.",
+        "path": "fixtures/validation/synthetic-workflows.json",
+        "format": "json",
+        "split": null
+      },
+      "cases": 6,
+      "datasetEvents": 30,
+      "evaluatedSteps": 24,
+      "nextTop1Accuracy": 0.375,
+      "nextTopKAccuracy": 0.625,
+      "topK": 3,
+      "missCount": 9,
+      "misses": [
+        {
+          "caseId": "fix-success-1",
+          "step": 2,
+          "expected": "tests.run",
+          "predicted": [
+            "repo.inspected",
+            "task.completed",
+            "env.blocked"
+          ]
+        },
+        {
+          "caseId": "fix-success-2",
+          "step": 2,
+          "expected": "tests.run",
+          "predicted": [
+            "repo.inspected",
+            "task.completed",
+            "env.blocked"
+          ]
+        },
+        {
+          "caseId": "docs-success-1",
+          "step": 2,
+          "expected": "docs.updated",
+          "predicted": [
+            "repo.inspected",
+            "tests.run",
+            "patch.applied"
+          ]
+        },
+        {
+          "caseId": "docs-success-1",
+          "step": 3,
+          "expected": "task.completed",
+          "predicted": [
+            "repo.inspected",
+            "tests.run",
+            "tests.passed"
+          ]
+        },
+        {
+          "caseId": "fix-success-3",
+          "step": 2,
+          "expected": "tests.run",
+          "predicted": [
+            "repo.inspected",
+            "task.completed",
+            "env.blocked"
+          ]
+        },
+        {
+          "caseId": "blocked-1",
+          "step": 2,
+          "expected": "env.blocked",
+          "predicted": [
+            "repo.inspected",
+            "tests.run",
+            "task.completed"
+          ]
+        },
+        {
+          "caseId": "blocked-1",
+          "step": 3,
+          "expected": "task.failed",
+          "predicted": [
+            "repo.inspected",
+            "tests.run",
+            "task.completed"
+          ]
+        },
+        {
+          "caseId": "blocked-2",
+          "step": 2,
+          "expected": "env.blocked",
+          "predicted": [
+            "repo.inspected",
+            "tests.run",
+            "task.completed"
+          ]
+        },
+        {
+          "caseId": "blocked-2",
+          "step": 3,
+          "expected": "task.failed",
+          "predicted": [
+            "repo.inspected",
+            "tests.run",
+            "task.completed"
+          ]
+        }
+      ],
+      "risks": {
+        "evaluatedSteps": 0,
+        "expectedRiskCount": 0,
+        "predictedRiskCount": 0,
+        "truePositiveCount": 0,
+        "falsePositiveCount": 0,
+        "falseNegativeCount": 0,
+        "precision": null,
+        "recall": null,
+        "misses": [],
+        "falsePositives": []
+      }
+    },
+    {
+      "baseline": "textual-lesson-prior",
+      "description": "Predicts from workflow-class and last-event lessons extracted from successful training traces.",
+      "dataset": {
+        "name": "synthetic-workflows",
+        "description": "Small synthetic workflow corpus for next-step validation across code, docs, and blocked task branches.",
+        "path": "fixtures/validation/synthetic-workflows.json",
+        "format": "json",
+        "split": null
+      },
+      "cases": 6,
+      "datasetEvents": 30,
+      "evaluatedSteps": 24,
+      "nextTop1Accuracy": 0.7083333333333334,
+      "nextTopKAccuracy": 0.9583333333333334,
+      "topK": 3,
+      "missCount": 1,
+      "misses": [
+        {
+          "caseId": "docs-success-1",
+          "step": 2,
+          "expected": "docs.updated",
+          "predicted": [
+            "tests.run",
+            "env.blocked"
+          ]
+        }
+      ],
+      "risks": {
+        "evaluatedSteps": 0,
+        "expectedRiskCount": 0,
+        "predictedRiskCount": 0,
+        "truePositiveCount": 0,
+        "falsePositiveCount": 0,
+        "falseNegativeCount": 0,
+        "precision": null,
+        "recall": null,
+        "misses": [],
+        "falsePositives": []
+      }
+    }
+  ],
+  "bestByAccuracy": {
+    "baseline": "raw-ngram",
+    "nextTop1Accuracy": 0.7083333333333334,
+    "nextTopKAccuracy": 0.9583333333333334,
+    "missCount": 1
+  },
+  "bestByRiskRecall": null
+}

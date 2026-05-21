@@ -1,0 +1,157 @@
+{
+  "stateStrategy": "family-procedure",
+  "dataset": {
+    "name": "synthetic-workflows",
+    "description": "Small synthetic workflow corpus for next-step validation across code, docs, and blocked task branches.",
+    "path": "fixtures/validation/synthetic-workflows.json",
+    "format": "json",
+    "split": null
+  },
+  "cases": 6,
+  "datasetEvents": 30,
+  "evaluatedSteps": 24,
+  "nextTop1Accuracy": 0.8333333333333334,
+  "nextTopKAccuracy": 0.9166666666666666,
+  "topK": 3,
+  "missCount": 2,
+  "eventBreakdown": [
+    {
+      "event": "repo.inspected",
+      "occurrences": 6,
+      "top1Hits": 6,
+      "topKHits": 6,
+      "top1Accuracy": 1,
+      "topKAccuracy": 1
+    },
+    {
+      "event": "task.completed",
+      "occurrences": 4,
+      "top1Hits": 3,
+      "topKHits": 3,
+      "top1Accuracy": 0.75,
+      "topKAccuracy": 0.75
+    },
+    {
+      "event": "patch.applied",
+      "occurrences": 3,
+      "top1Hits": 3,
+      "topKHits": 3,
+      "top1Accuracy": 1,
+      "topKAccuracy": 1
+    },
+    {
+      "event": "tests.passed",
+      "occurrences": 3,
+      "top1Hits": 3,
+      "topKHits": 3,
+      "top1Accuracy": 1,
+      "topKAccuracy": 1
+    },
+    {
+      "event": "tests.run",
+      "occurrences": 3,
+      "top1Hits": 3,
+      "topKHits": 3,
+      "top1Accuracy": 1,
+      "topKAccuracy": 1
+    },
+    {
+      "event": "env.blocked",
+      "occurrences": 2,
+      "top1Hits": 0,
+      "topKHits": 2,
+      "top1Accuracy": 0,
+      "topKAccuracy": 1
+    },
+    {
+      "event": "task.failed",
+      "occurrences": 2,
+      "top1Hits": 2,
+      "topKHits": 2,
+      "top1Accuracy": 1,
+      "topKAccuracy": 1
+    },
+    {
+      "event": "docs.updated",
+      "occurrences": 1,
+      "top1Hits": 0,
+      "topKHits": 0,
+      "top1Accuracy": 0,
+      "topKAccuracy": 0
+    }
+  ],
+  "misses": [
+    {
+      "caseId": "docs-success-1",
+      "step": 2,
+      "expected": "docs.updated",
+      "predicted": [
+        "tests.run",
+        "env.blocked"
+      ]
+    },
+    {
+      "caseId": "docs-success-1",
+      "step": 3,
+      "expected": "task.completed",
+      "predicted": []
+    }
+  ],
+  "research": {
+    "support": {
+      "matchedSteps": 23,
+      "unmatchedSteps": 1,
+      "averageCandidateCount": 1.417,
+      "averageTotalSupport": 3.333,
+      "averageTopCandidateSupport": 2.708,
+      "averageMatchedOrder": 2.217,
+      "averageGraphStates": 33.25,
+      "minGraphStates": 27,
+      "maxGraphStates": 34
+    },
+    "matchBreakdown": [
+      {
+        "mode": "raw",
+        "matchedOrder": 3,
+        "occurrences": 6,
+        "share": 0.25
+      },
+      {
+        "mode": "projected",
+        "matchedOrder": 2,
+        "occurrences": 6,
+        "share": 0.25
+      },
+      {
+        "mode": "projected",
+        "matchedOrder": 1,
+        "occurrences": 6,
+        "share": 0.25
+      },
+      {
+        "mode": "projected",
+        "matchedOrder": 3,
+        "occurrences": 5,
+        "share": 0.208
+      },
+      {
+        "mode": "none",
+        "matchedOrder": 0,
+        "occurrences": 1,
+        "share": 0.042
+      }
+    ],
+    "risks": {
+      "evaluatedSteps": 0,
+      "expectedRiskCount": 0,
+      "predictedRiskCount": 0,
+      "truePositiveCount": 0,
+      "falsePositiveCount": 0,
+      "falseNegativeCount": 0,
+      "precision": null,
+      "recall": null,
+      "misses": [],
+      "falsePositives": []
+    }
+  }
+}

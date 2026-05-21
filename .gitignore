@@ -28,6 +28,8 @@ coverage/
 .turbo/
 
 # Local databases and caches
+__pycache__/
+*.py[cod]
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
@@ -38,11 +40,11 @@ tmp/
 
 # Runtime state
 *.pid
+artifacts/
 .beads/
 .sherpa/
 
 # OpenClaw-style local data
 .openclaw/
 
-prd/
 prd/

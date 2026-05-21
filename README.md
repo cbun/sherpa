@@ -26,7 +26,7 @@ The principal contributions are:
 
 Sherpa draws on ideas from process mining (event logs as first-class analytical objects), higher-order Markov models (multi-step context dependence), de Bruijn graph construction (suffix-overlap structure), and sequential pattern mining (support-based transition significance). It is, to our knowledge, the first system to apply variable-order Markov modeling specifically to LLM agent tool-use and task-execution traces for the purpose of real-time procedural guidance.
 
-## Why This Exists
+## Motivation
 
 Agent sessions have a specific memory problem that RAG and conversation history don't solve well.
 
@@ -448,6 +448,194 @@ openclaw plugins install --local ./packages/openclaw
 
 Restart OpenClaw. Data stores under `~/.openclaw/agents/{agentId}/sherpa/` by default.
 
+A ready-to-copy example also lives at [`docs/examples/openclaw-sherpa.config.json`](./docs/examples/openclaw-sherpa.config.json).
+
+## Conservative Defaults
+
+For most people, start with:
+
+- `transport.mode = embedded`
+- advisory enabled
+- scope limited to direct messages and DMs
+- raw text redaction left on
+
+That gives you the easiest setup and the safest privacy posture.
+
+## A Minimal Example
+
+Without Sherpa:
+
+- OpenClaw handles each task on its own
+
+With Sherpa:
+
+- OpenClaw can recognize "this looks like the same sort of task as before"
+- it can suggest the next likely move
+- it can warn when a branch often leads to blockage
+- it can recall how successful cases finished
+
+## OpenClaw Tools
+
+After install, Sherpa adds these OpenClaw tools:
+
+- `workflow_status`
+- `workflow_state`
+- `workflow_next`
+- `workflow_risks`
+- `workflow_recall`
+- `workflow_taxonomy`
+- `workflow_analytics`
+- `workflow_doctor`
+- `workflow_rebuild`
+- `workflow_export`
+- `workflow_gc`
+
+The most useful ones for day-to-day use are:
+
+- `workflow_next`: what usually comes next from here
+- `workflow_risks`: where this path often fails or stalls
+- `workflow_recall`: similar past paths and how they continued
+- `workflow_status`: whether Sherpa is healthy and capturing properly
+
+## Transport Modes
+
+### Simple local setup
+
+Use embedded mode when you want the least setup:
+
+```json
+{
+  "transport": {
+    "mode": "embedded"
+  }
+}
+```
+
+### CLI subprocess mode
+
+Use this if you want the plugin to shell out to the `sherpa` CLI:
+
+```json
+{
+  "transport": {
+    "mode": "stdio",
+    "command": "sherpa"
+  }
+}
+```
+
+### Managed HTTP daemon
+
+Use this if you want a warm local process managed by the plugin:
+
+```json
+{
+  "transport": {
+    "mode": "http",
+    "baseUrl": "http://127.0.0.1:8787",
+    "manageProcess": true
+  }
+}
+```
+
+## Local First
+
+Sherpa is designed to be conservative by default.
+
+- it stores data locally
+- raw message text is redacted by default
+- scope defaults to deny unless allowed by rules
+- you can ignore session patterns entirely
+- you can mark some sessions as stateless
+
+If you want Sherpa to remember less, tighten scope rules first.
+
+## Process View
+
+```mermaid
+flowchart TD
+  A["Recent typed event suffix
+  inspect -> patch -> test"] --> B["Current workflow state"]
+
+  B --> C["Observed continuation:
+  complete
+  support: high
+  success rate: high"]
+
+  B --> D["Observed continuation:
+  env-check
+  support: medium
+  stall rate: elevated"]
+
+  B --> E["Observed continuation:
+  rewrite
+  support: low
+  failure rate: elevated"]
+
+  C --> F["Sherpa can rank likely next steps"]
+  D --> G["Sherpa can warn about risky branches"]
+  E --> H["Sherpa can recall similar bad endings"]
+```
+
+## Mechanism and Theory
+
+![How Sherpa retrieves next steps, risks, and recall](./docs/diagrams/sherpa-retrieval.svg)
+
+Sherpa can be described, a little loosely, as a procedural memory layer for OpenClaw.
+
+It does not try to answer "what do I know about this topic?" and it does not mainly try to answer "what was said before?"
+It is closer to:
+
+- what path are we on
+- what usually follows this path
+- which branches tend to resolve well
+- which branches tend to fail or go quiet
+
+This is one answer to a recurring tension in agent systems:
+semantic memory is often too broad for moment-to-moment workflow steering, while raw conversation history is too expensive and fragile to carry indefinitely.
+
+The internal model is intentionally structured rather than fuzzy.
+Sherpa keeps an append-only local event ledger, then derives a workflow graph from those events.
+Recent event suffixes act as the current state; observed continuations become candidate next moves.
+
+Later theory for this project comes from a mix of:
+
+- higher-order Markov models
+- de Bruijn-style overlap ideas
+- process mining
+- graph-shaped memory systems
+
+That academic background matters mostly because it shapes the retrieval behavior:
+
+- advice stays bounded to plausible next branches instead of searching an endless memory space
+- repeated workflow phases compress into reusable paths
+- suggestions can be explained with support, success, failure, and timing rather than only vague similarity
+
+The design hypothesis is that this changes the failure surface in a useful way:
+
+- if the prompt must be compacted, the learned workflow trace can still persist outside the prompt
+- if a session is restarted, the durable ledger still preserves the path that was taken
+- if the recent chat surface is noisy, retrieval can still operate over typed transitions rather than raw text similarity
+- if memory grows large, bounded event types and typed transitions keep retrieval closer to a process model than a free-form note pile
+
+Sherpa is predictive, not oracular.
+It notices regularities in how work tends to unfold.
+
+## For Power Users
+
+Sherpa also ships with:
+
+- a CLI package: [`packages/cli`](./packages/cli)
+- an OpenClaw plugin package: [`packages/openclaw`](./packages/openclaw)
+- an SDK: [`packages/sdk`](./packages/sdk)
+- an MCP server: [`packages/mcp`](./packages/mcp)
+
+If you want the research background, see [`docs/research.pdf`](./docs/research.pdf).
+
+If you want the falsifiable research roadmap, see [`docs/sherpa-10-10-research-plan.md`](./docs/sherpa-10-10-research-plan.md).
+
+If you want the product spec, see [`prd/sherpa-prd.md`](./prd/sherpa-prd.md).
+
 ## Local Development
 
 ```bash
@@ -462,10 +650,70 @@ pnpm validate-suite --input fixtures/validation/suite.json
 # Direct CLI usage
 node packages/cli/dist/index.js --root ./.sherpa status
 node packages/cli/dist/index.js --root ./.sherpa workflow-next --case-id case-123
+node packages/cli/dist/index.js --root ./.sherpa workflow-risks --case-id case-123
+node packages/cli/dist/index.js --root ./.sherpa workflow-recall --case-id case-123 --mode successful
+node packages/cli/dist/index.js --root ./.sherpa taxonomy-report --recent-days 14 --max-types 50 --max-drift-score 0.2
+node packages/cli/dist/index.js --root ./.sherpa analytics-report --limit 10
+node packages/cli/dist/index.js validate --dataset fixtures/validation/synthetic-workflows.json
+node packages/cli/dist/index.js validate-baselines --dataset fixtures/validation/synthetic-workflows.json
+node packages/cli/dist/index.js research-gate --dataset fixtures/validation/openclaw-realish.json
+node packages/cli/dist/index.js simulate --sessions-dir ~/.openclaw/agents/main/sessions --max-sessions 25 --rebuild-every 50
 ```
+
+`simulate` replays real OpenClaw session logs into an isolated temporary Sherpa store and reports advisory fire rate, state coverage, and workflow prediction behavior without mutating your main store.
+
+`research-gate` compares Sherpa's `raw`, `procedure`, and `family-procedure` matching strategies against deterministic non-Sherpa baselines so you can tell when extra semantics help explanation, support density, or prediction. Validation reports also include support density, match-mode breakdowns, graph-state growth, and annotated risk counters for research runs.
+
+`validate-baselines` runs deterministic non-Sherpa baselines (`global-majority`, `raw-ngram`, `workflow-class-ngram`, `semantic-rag-lite`, and `textual-lesson-prior`). `research-gate` runs Sherpa strategies and those baselines together, then emits H1-H5 thesis decisions as `supported`, `rejected`, or `pending`.
+
+## Dockerized OpenClaw Harness
+
+There is now a contained OpenClaw harness under [`harness/openclaw`](./harness/openclaw) for repeatable plugin smoke tests without touching your personal `~/.openclaw`.
+
+From the repo root:
+
+```bash
+pnpm harness:openclaw:build
+pnpm harness:openclaw:up
+pnpm harness:openclaw:smoke
+pnpm harness:openclaw:suite -- --suite harness/openclaw/tasks/smoke-suite.json --mode advisory
+pnpm harness:openclaw:shell
+pnpm harness:openclaw:down
+```
+
+The harness:
+
+- builds this repo into a dedicated image
+- runs OpenClaw with an isolated `OPENCLAW_HOME`
+- links `packages/openclaw` from the built repo image
+- starts the gateway in the foreground inside the container
+- runs a real Sherpa smoke turn and then queries `workflow_status`
+
+By default it expects an `OPENAI_API_KEY` and uses `openai/gpt-5.4` with `openclaw agent --local`.
+
+If you want to exercise a host-authenticated provider such as `openai-codex/*`, see [`harness/openclaw/README.md`](./harness/openclaw/README.md). The short version is that you mount host OpenClaw auth read-only into the container, set `OPENCLAW_COPY_HOST_AUTH=1`, and switch the smoke path from `--local` to gateway mode.
+
+For research runs, the suite runner exports per-task agent results, Sherpa workflow status, and an archived agent state under `artifacts/openclaw-harness/`.
+
+## STATE-Bench Research Path
+
+Sherpa also has a STATE-Bench bridge under [`harness/state-bench`](./harness/state-bench). It builds Sherpa-derived procedural learning cards from STATE-Bench train trajectories and exposes them through a leaderboard-compatible `retrieve_learnings(query, top_k)` agent adapter.
+
+```bash
+pnpm build
+pnpm harness:statebench:build-learnings -- --state-bench-dir /path/to/STATE-Bench --reset
+```
+
+Use this path for public benchmark-oriented runs. Internal next-step validation is useful for iteration, but STATE-Bench is the current public target for task completion, reliability, UX, and cost. Local confidence runs are useful for development, but they are not official STATE-Bench scores.
 
 ## Current State
 
-Sherpa is usable and production-oriented. The capture pipeline, graph engine, advisory injection, all tools, SDK, MCP server, and CLI are complete and tested.
+Sherpa now has a usable local procedural-memory engine plus a native OpenClaw integration path:
 
-The main area for future improvement is ranking quality — making predictions smarter as validation corpora grow and real-world usage patterns emerge.
+- the graph can derive routed `family` and `procedure` state from bounded event projections while keeping the raw ledger canonical
+- raw matching remains the default live engine behavior, with semantic strategies available for validation and research runs
+- workflow queries expose support, matched order, probabilities, outcomes, freshness, and match evidence
+- validation commands compare Sherpa strategies against deterministic baselines such as raw n-grams and lexical trajectory retrieval
+- Dockerized OpenClaw and STATE-Bench harnesses give repeatable applied checks without mutating the host OpenClaw install
+
+The main unresolved work is calibration and proof. Current local evidence is useful for iteration, but this is not an official SOTA result. The next step is broader locked-protocol evaluation and ablations that separate core procedural memory value from benchmark-specific adapter repairs.
